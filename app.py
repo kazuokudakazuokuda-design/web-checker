@@ -8,17 +8,18 @@ st.set_page_config(page_title="🛡️ 戦略・実務診断レポート", layou
 st.title("🛡️ 実務特化型 Web戦略診断")
 st.caption("AIが業界の成功法則を解読し、競合との格差を徹底診断します")
 
-# StreamlitのSecret（秘密設定）からAPIキーを読み込む
+# StreamlitのSecretsからAPIキーを自動読み込み
 try:
-    api_key = st.secrets["OPENAI_API_KEY"]
-except:
-    st.error("APIキーが設定されていません。Streamlit CloudのSettingsから設定してください。")
+    raw_key = st.secrets["OPENAI_API_KEY"]
+    # 前後の空白や引用符を徹底的に掃除してエラーを防ぐ
+    api_key = raw_key.strip().strip('"').strip("'").replace(' ', '').replace('　', '')
+    client = OpenAI(api_key=api_key)
+except Exception as e:
+    st.error(f"APIキーの読み込みに失敗しました。Secretsの設定を確認してください。")
     st.stop()
 
-client = OpenAI(api_key=api_key)
-
 def get_site_content(url):
-    """サイトの文字情報を拾ってくる関数"""
+    """サイトの文字情報を拾ってくる関数（文字数制限を強化）"""
     try:
         url = url.strip()
         if not url.startswith("http"): url = "https://" + url
@@ -29,7 +30,9 @@ def get_site_content(url):
         for s in soup(['script', 'style', 'nav', 'footer', 'header', 'aside']):
             s.decompose()
         elements = soup.find_all(["title", "h1", "h2", "h3", "p", "li"])
-        return "\n".join([e.get_text().strip() for e in elements if e.get_text().strip()])[:8000]
+        content = "\n".join([e.get_text().strip() for e in elements if e.get_text().strip()])
+        # AIがパンクしないよう、各サイト3000文字までに制限
+        return content[:3000] 
     except Exception as e:
         return f"取得失敗: {str(e)}"
 
@@ -46,94 +49,57 @@ with st.form("input_form"):
     submit_btn = st.form_submit_button("業界解読・診断開始")
 
 if submit_btn and my_url and comp1_url and comp2_url:
-    # データの取得
-    with st.spinner("サイト群から「業界の成功法則」を抽出中..."):
+    with st.spinner("サイト群から情報を収集中..."):
         my_data = get_site_content(my_url)
         c1_data = get_site_content(comp1_url)
         c2_data = get_site_content(comp2_url)
+        
+        # 【デバッグ】もしデータが取れていなければ警告
+        if len(my_data) < 50:
+            st.warning(f"自社サイトの内容が十分に取得できていません（{len(my_data)}文字）。URLが正しいか、ブロックされていないか確認してください。")
 
-    # --- PHASE 1: AIによる業界基準の自動生成 ---
-    phase1_prompt = f"""
-    以下のサイト情報を分析し、この業界のWeb戦略における「5つの絶対基準」を定義してください。
-    自社: {my_data[:1500]} / 競合A: {c1_data[:1500]} / 競合B: {c2_data[:1500]}
-
-    出力形式：
-    ■この業界におけるWebサイト5大戦略基準
-    1. [基準名]
-       - （理由）: [なぜ重要か]
-       - （具体的な評価ポイント）: [具体的な3つのチェック要素]
-    """
-
-    res_phase1 = client.chat.completions.create(
-        model="gpt-4o",
-        messages=[{"role": "user", "content": phase1_prompt}],
-        temperature=0.0
-    )
-    industry_standards = res_phase1.choices[0].message.content
-    
-    st.success("STEP 1: 業界基準が定義されました")
-    st.markdown(industry_standards)
-
-    st.divider()
-
-    # --- PHASE 2: 詳細レポート生成 ---
-    with st.spinner("詳細レポートを生成中（1分程度かかります）..."):
-        phase2_prompt = f"""
-        あなたは、業界基準と最新のSEO/LLMOを熟知した、一切の妥協を許さないシニアコンサルタントです。
-        「情報不足」という言い訳は禁止します。提供されたデータから、客観的な事実に基づき【競合との格差】を具体的に暴いてください。
-
-        【業界基準】:
-        {industry_standards}
-
-        【解析対象データ】
-        自社: {my_data} / 競合A: {c1_data} / 競合B: {c2_data}
-
-        以下の構成で、競合との比較を交えて出力してください：
-
-        ■0. ポジショニング分析
-        ・（特徴）: 自社サイトが現在持っている強みやポジショニング。
-        ・（競合比較）: 競合A/Bと比較した際の、情報量・UI・信頼感の決定的な差。
-        ・（総合評価）: 市場における現在のWeb戦闘力の判定。
-
-        ■1. コンテンツの「網羅性と深さ」の分析
-        ・論点：【Q&Aの専門性】【解決事例の一次情報量】【独自の見解/専門コラムの鮮度】
-        ・具体的指摘：競合と比較して、自社のどの記述が「浅い」か、何を追加すべきか。
-
-        ■2. 成約導線と「顧客心理ハードル」の分析
-        ・論点：【ファーストビューの3秒ルール】【料金・プロセスの透明性】【信頼感を醸成する非言語情報（写真等）】
-        ・具体的指摘：現在のバナー、写真、コピーのどこが「離脱」を招いているか。
-
-        ■3. EEAT（経験・専門性・権威性・信頼性）の診断
-        ・論点：【著者の記名性とプロフィールの厚み】【公的・外部データへのリンク】【解決実績の客観的証明】
-        ・具体的指摘：GoogleやAIに「専門家」と認めさせるために足りない具体的要素。
-
-        ■4. SEO / LLMO（AI検索）適応状況
-        ・論点：【構造化データの活用状況】【AIが理解しやすいセマンティック構造】【ゼロクリック検索に対応する定義文の有無】
-
-        ■5. 競合を圧倒する「新規コンテンツ案」10選
-        ・（タイトル）（狙い）（盛り込むべき具体的キーワード）をセットで10個。
-
-        ■6. 戦略的キーワード・ポートフォリオ（10選）
-
-        ■7. 最優先改善アクション（守りと攻め）
-        【守りのアクション（即修正）】
-        ・「どのページの、どの要素をどう直すか」をピンポイントで3つ。
-        【攻めのアクション（新規/拡大）】
-        ・「どのキーワードを狙い、どんな導線を作るか」を具体的に2つ。
-
-        ■8. リライト推奨ページと改善課題
-        ・対象ページ：[ページ名]
-        ・現在の課題：[具体的かつ簡潔な課題内容]
-        """
-
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": "あなたは技術、心理、戦略に精通したコンサルタントです。曖昧な表現を排し、事実に基づき冷徹に指摘してください。"},
-                {"role": "user", "content": phase2_prompt}
-            ],
+    # --- PHASE 1: 業界基準の生成 ---
+    try:
+        # 安定性の高い gpt-4o-mini を使用
+        res_phase1 = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": f"以下のサイト情報から戦略基準を5つ定義せよ。\n自社:{my_data}\n競合A:{c1_data}\n競合B:{c2_data}"}],
             temperature=0.0
         )
-        
-        st.header("🛡️ 戦略・実務診断レポート")
-        st.markdown(response.choices[0].message.content)
+        industry_standards = res_phase1.choices[0].message.content
+        st.success("STEP 1: 成功法則の解読完了")
+        st.markdown(industry_standards)
+
+        st.divider()
+
+        # --- PHASE 2: 詳細診断レポート ---
+        with st.spinner("詳細レポートを生成中..."):
+            phase2_prompt = f"""
+            以下の基準に基づき、自社サイトと競合を比較して診断せよ。
+            「情報不足」と言い訳せず、推測を交えて冷徹に指摘すること。
+            【基準】: {industry_standards}
+            【データ】自社:{my_data} / 競合A:{c1_data} / 競合B:{c2_data}
+            
+            構成：
+            ■0. ポジショニング分析
+            ■1. コンテンツの「網羅性と深さ」
+            ■2. 成約導線と「顧客心理ハードル」
+            ■3. EEAT診断
+            ■4. SEO / LLMO適応状況
+            ■5. 新規コンテンツ案10選
+            ■6. 戦略キーワード10選
+            ■7. 最優先アクション（守り・攻め）
+            ■8. リライト推奨ページと課題
+            """
+
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "system", "content": "あなたは冷徹なコンサルタントです。"}, {"role": "user", "content": phase2_prompt}],
+                temperature=0.0
+            )
+            st.header("🛡️ 戦略・実務診断レポート")
+            st.markdown(response.choices[0].message.content)
+
+    except Exception as e:
+        # BadRequestErrorなどの具体的な原因を表示
+        st.error(f"OpenAI APIエラーが発生しました: {e}")
