@@ -8,13 +8,11 @@ st.set_page_config(page_title="🛡️ 戦略・実務診断レポート", layou
 st.title("🛡️ 実務特化型 Web戦略診断")
 st.caption("AIが業界の成功法則を解読し、競合との格差を徹底診断します")
 
-# サイドバーでAPIキーを入力
-with st.sidebar:
-    st.header("設定")
-    api_key = st.text_input("OpenAI API Keyを入力してください", type="password")
-
-if not api_key:
-    st.warning("サイドバーにOpenAIのAPIキーを入力してください。")
+# StreamlitのSecret（秘密設定）からAPIキーを読み込む
+try:
+    api_key = st.secrets["OPENAI_API_KEY"]
+except:
+    st.error("APIキーが設定されていません。Streamlit CloudのSettingsから設定してください。")
     st.stop()
 
 client = OpenAI(api_key=api_key)
