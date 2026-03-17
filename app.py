@@ -6,9 +6,9 @@ import streamlit.components.v1 as components
 import re
 
 # 1. 画面構成
-st.set_page_config(page_title="🛡️ 戦略Web診断：実務命令版", layout="wide")
-st.title("🛡️ 経営直結型・Web戦略診断")
-st.caption("※物理数値と業界慣習から「現場が動かざるを得ない修正タスク」を生成します。")
+st.set_page_config(page_title="🛡️ 戦略Web診断：事実と示唆", layout="wide")
+st.title("🛡️ 戦略的Web比較診断レポート")
+st.caption("※入力URLの物理数値から、経営リスク（示唆）と具体的修正タスクを生成します。")
 
 # --- 設定エリア ---
 st.divider()
@@ -16,7 +16,7 @@ st.subheader("🔍 解析対象の設定")
 col_u1, col_u2, col_u3 = st.columns(3)
 
 with col_u1:
-    my_url = st.text_input("自社URL", value="https://akagaki-dental.com/")
+    my_url = st.text_input("自社URL", placeholder="https://example.com")
 with col_u2:
     comp1_url = st.text_input("競合A", placeholder="https://competitor-a.com")
 with col_u3:
@@ -88,7 +88,7 @@ if 'step' not in st.session_state:
 
 if st.button("STEP 1: 業界解析"):
     if not my_url or not comp1_url:
-        st.error("URLを入力してください。")
+        st.error("自社と競合AのURLは必須です。")
     else:
         with st.spinner("診断中"):
             st.session_state.my_m = get_site_metrics(my_url)
@@ -96,16 +96,16 @@ if st.button("STEP 1: 業界解析"):
             st.session_state.c2_m = get_site_metrics(comp2_url) if comp2_url else None
             
             if st.session_state.my_m and st.session_state.c1_m:
-                ind_prompt = f"業界名のみを1語で回答せよ。\n\nテキスト:{st.session_state.my_m['text'][:2000]}"
+                ind_prompt = f"このWebサイトの業界名のみを1語で回答してください。\n\nテキスト:{st.session_state.my_m['text'][:2000]}"
                 response = client.chat.completions.create(model="gpt-4o", messages=[{"role": "user", "content": ind_prompt}], temperature=0.0)
                 st.session_state.industry = response.choices[0].message.content
                 st.session_state.step = 2
 
 if st.session_state.step >= 2:
     st.divider()
-    industry_input = st.text_input("解析業界ベース", value=st.session_state.industry)
+    industry_input = st.text_input("解析対象の業界", value=st.session_state.industry)
     
-    if st.button("STEP 2: 具体的戦略レポート生成"):
+    if st.button("STEP 2: 具体的戦略レポートを生成"):
         st.session_state.industry = industry_input
         with st.spinner("診断中"):
             def fmt_m(m):
@@ -115,15 +115,16 @@ if st.session_state.step >= 2:
             if st.session_state.c2_m: m_data += f"競合B: {fmt_m(st.session_state.c2_m)}\n"
 
             sys_msg = (
-                f"あなたは{st.session_state.industry}業界のWeb戦略の鬼です。丁寧な『ですます調』で、社長が即決できる具体的で厳しいレポートを作成してください。\n\n"
-                "【出力の絶対ルール】\n"
-                "1. **数値の罪を数えよ**：『見出しが〇個少ない』事実に対し、『これはユーザーの△△という悩みを無視している証拠だ』と断定してください。\n"
-                "2. **『示唆：』の解像度**：一般論を禁止します。『自社サイトの[ページ名]にある[見出し]を、[業界の具体的悩み]を解決する文言に書き換え、情報を分割せよ』と名指しで指示してください。\n"
-                "3. **スマホUXの正答**：段落100字超は『不快な壁』です。短文化と箇条書きへの解体を命じてください。\n"
-                "4. **鮮度のリスク**：更新日不明を『患者/顧客が廃業を疑う致命的欠陥』としてえぐり、即座に2026年3月の日付を含むコンテンツを投稿するよう命じてください。\n"
-                "5. **2x3アクションプラン**：最優先・優先・次のステップ各2項目。具体的な修正箇所（例：[院長紹介ページの中段]など）を指定すること。"
+                f"あなたは{st.session_state.industry}業界のWeb戦略の鬼です。丁寧な『ですます調』でレポートを作成してください。\n\n"
+                "【記述の絶対ルール】\n"
+                "1. **見出しに（表形式）等のメタ説明を一切書かないこと。**\n"
+                "2. 各項目は必ず『事実：』と『示唆：』に分けること。\n"
+                "3. 『事実：』には計測数値と、自社テキストから抽出した具体的な不備（例：〇〇の具体的解説が皆無である、等）を特定して書くこと。\n"
+                "4. 『示唆：』には数値の格差（構造的欠陥）が、業界の顧客心理においていかに致命的な損失（信頼喪失、離脱、商機逸失）を招いているかをえぐり、[どのページのどの箇所]を[具体的にどう直すか]を名指しで命令すること。\n"
+                "5. **段落長の判定**：自社が100字超なら「スマホでの文字の壁」であり、短文化・箇条書きへの解体を命じるのが正解です。競合が長くても絶対に追随させないこと。\n"
+                "6. **2x3アクションプラン**：最優先・優先・次のステップ各2項目。具体的な修正ページと具体的文言をピンポイントで指定すること。"
             )
-            user_msg = f"業界: {st.session_state.industry}\nデータ:\n{m_data}\n自社テキスト: {st.session_state.my_m['text'][:5000]}\n\n### ■ 物理構造スペック比較\n### ■1. コンテンツの実務解像度分析\n#### 【実績の裏付け（証拠の密度）】\n### ■2. 成約導線とスマホUXの物理解析\n#### 【CTAとマイクロコピー】\n#### 【テキスト構造と可読性】\n### ■3. EEAT 診断（情報の権威性と信頼性）\n#### 【専門性（Expertise）】\n#### 【権威性（Authoritativeness）】\n#### 【信頼性（Trustworthiness）】\n### ■4. SEO / LLMO 診断（構造と鮮度）\n#### 【内部構造（見出し・リンク）】\n#### 【サイト構造（階層・網羅性）】\n#### 【情報の鮮度と生存確認】\n### ■5. 自社が勝つための具体的戦略案 5案\n### ■6. 最優先改善アクションプラン（自社用）"
+            user_msg = f"業界: {st.session_state.industry}\nデータ:\n{m_data}\n自社テキスト抜粋: {st.session_state.my_m['text'][:4500]}\n\n### ■ 物理構造スペック比較\n### ■1. コンテンツの実務解像度分析\n#### 【実績の裏付け（証拠の密度）】\n### ■2. 成約導線とスマホUXの物理解析\n#### 【CTAとマイクロコピー】\n#### 【テキスト構造と可読性】\n### ■3. EEAT 診断（情報の権威性と信頼性）\n#### 【専門性（Expertise）】\n#### 【権威性（Authoritativeness）】\n#### 【信頼性（Trustworthiness）】\n### ■4. SEO / LLMO 診断（構造と鮮度）\n#### 【内部構造（見出し・リンク）】\n#### 【サイト構造（階層・網羅性）】\n#### 【情報の鮮度と生存確認】\n### ■5. 自社が勝つための具体的戦略案 5案\n### ■6. 最優先改善アクションプラン（自社用）"
             
             diag_res = client.chat.completions.create(model="gpt-4o", messages=[{"role": "system", "content": sys_msg}, {"role": "user", "content": user_msg}], temperature=0.0)
             st.session_state.full_report = diag_res.choices[0].message.content
