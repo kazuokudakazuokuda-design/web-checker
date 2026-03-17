@@ -7,7 +7,19 @@ import streamlit.components.v1 as components
 # 1. 画面構成
 st.set_page_config(page_title="🛡️ 業界特化型Webサイト診断", layout="wide")
 st.title("🛡️ 業界特化型Webサイト診断")
-st.caption("※あくまで生成AIによる一次診断としてご利ください。情報が不確かな場合があります。")
+st.caption("※あくまで生成AIによる一次診断としてご利用ください。情報が不確かな場合があります。")
+
+# --- タイトル直下に入力エリアを配置 ---
+st.divider()
+st.subheader("🔍 診断対象の設定")
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    my_url = st.text_input("自社URL", placeholder="https://example.com")
+with col2:
+    comp1_url = st.text_input("競合A", placeholder="https://competitor-a.com")
+with col3:
+    comp2_url = st.text_input("競合B（任意）", placeholder="https://competitor-b.com")
 
 # API設定
 try:
@@ -26,17 +38,12 @@ def get_site_content(url):
         r.encoding = r.apparent_encoding
         soup = BeautifulSoup(r.text, "html.parser")
         
-        # Meta情報
-        meta_desc = soup.find("meta", attrs={"name": "description"})
-        description = meta_desc["content"].strip() if meta_desc else "未設定"
-        
-        # 本文テキスト（タグ構造を維持して抽出）
         for s in soup(['script', 'style', 'nav', 'footer', 'header', 'aside']):
             s.decompose()
+        
         lines = []
         for tag in soup.find_all(['title', 'h1', 'h2', 'h3', 'h4', 'p', 'li', 'dt', 'dd', 'table', 'img']):
             if tag.name == 'img':
-                # 画像の最適化（Lazyload/WebP）の判定用属性を擬似的にテキスト化
                 lazy = "lazy-ok" if tag.get('loading') == 'lazy' else "lazy-ng"
                 src = tag.get('src', '')
                 webp = "webp-ok" if ".webp" in src.lower() else "webp-ng"
@@ -45,6 +52,9 @@ def get_site_content(url):
                 text = tag.get_text().strip()
                 if len(text) > 2:
                     lines.append(f"<{tag.name}>{text}")
+        
+        meta_desc = soup.find("meta", attrs={"name": "description"})
+        description = meta_desc["content"].strip() if meta_desc else "未設定"
         
         content = "\n".join(lines)[:8500]
         return {"description": description, "content": content}
@@ -74,35 +84,32 @@ if 'step' not in st.session_state:
     st.session_state.industry = ""
     st.session_state.full_report = ""
 
-with st.sidebar:
-    st.header("🔍 診断対象設定")
-    my_url = st.text_input("自社URL", placeholder="https://example.com")
-    comp1_url = st.text_input("競合A", placeholder="https://competitor-a.com")
-    comp2_url = st.text_input("競合B", placeholder="（任意）")
-    if st.button("STEP 1: サイト情報を解析"):
-        if not my_url or not comp1_url:
-            st.error("自社と競合AのURLは必須です。")
-        else:
-            with st.spinner("各サイトの構造を読み取っています..."):
-                st.session_state.my_res = get_site_content(my_url)
-                st.session_state.c1_res = get_site_content(comp1_url)
-                st.session_state.c2_res = get_site_content(comp2_url) if comp2_url else {"description": "なし", "content": "なし"}
-                st.session_state.urls = {"my": my_url, "c1": comp1_url, "c2": comp2_url if comp2_url else "-"}
-                
-                ind_prompt = f"業界名を回答せよ。余計な言葉は不要。\n\n自社:{st.session_state.my_res['content']}\n競合:{st.session_state.c1_res['content']}"
-                response = client.chat.completions.create(
-                    model="gpt-4o",
-                    messages=[{"role": "user", "content": ind_prompt}],
-                    temperature=0.0
-                )
-                st.session_state.industry = response.choices[0].message.content.replace("業界", "")
-                st.session_state.step = 2
+# ステップ管理のロジック
+if st.button("STEP 1: サイト情報を解析"):
+    if not my_url or not comp1_url:
+        st.error("自社と競合AのURLは必須です。")
+    else:
+        with st.spinner("各サイトの構造を読み取っています..."):
+            st.session_state.my_res = get_site_content(my_url)
+            st.session_state.c1_res = get_site_content(comp1_url)
+            st.session_state.c2_res = get_site_content(comp2_url) if comp2_url else {"description": "なし", "content": "なし"}
+            st.session_state.urls = {"my": my_url, "c1": comp1_url, "c2": comp2_url if comp2_url else "-"}
+            
+            ind_prompt = f"業界名を回答せよ。余計な言葉は不要。\n\n自社:{st.session_state.my_res['content']}\n競合:{st.session_state.c1_res['content']}"
+            response = client.chat.completions.create(
+                model="gpt-4o",
+                messages=[{"role": "user", "content": ind_prompt}],
+                temperature=0.0
+            )
+            st.session_state.industry = response.choices[0].message.content.replace("業界", "")
+            st.session_state.step = 2
 
 if st.session_state.step >= 2:
+    st.divider()
     st.subheader("📌 診断の実行")
     industry_input = st.text_input("特定された業界", value=st.session_state.industry)
     
-    if st.button("詳細レポートを生成"):
+    if st.button("STEP 2: 詳細レポートを生成"):
         st.session_state.industry = industry_input
         with st.spinner("戦略的な提言を構成しています..."):
             sys_msg = (
@@ -121,11 +128,11 @@ if st.session_state.step >= 2:
                 f"【自社URL】: {st.session_state.urls['my']}\n"
                 f"【自社データ】: {st.session_state.my_res['content']}\n"
                 f"【競合データ】: A:{st.session_state.c1_res['content']} / B:{st.session_state.c2_res['content']}\n\n"
-                "以下の構成でレポートを作成してください。\n\n"
+                "制作会社の社長に提出する、現場指示書レベルのレポートを作成してください。\n\n"
                 "### ■1. コンテンツの実務解像度分析\n"
                 "#### 【実績の裏付け（証拠の密度）】\n"
                 "競合の具体的数値・事例名の有無と、自社実績を単なる数から『信頼の根拠』へ昇華させるための提言を記述。\n\n"
-                "### ■2. 成約導線とスマホUXの物理解析\n"
+                "### ■2. 成約導線とスマホUX의 物理解析\n"
                 "#### 【CTAとマイクロコピー】\n"
                 "ボタン周辺の安心させる文言の有無を比較。自社の成約ハードルを下げるための具体的文言案を提言。\n"
                 "#### 【テキスト構造と可読性】\n"
@@ -141,7 +148,7 @@ if st.session_state.step >= 2:
                 "#### 【サイト構造（階層・網羅性）】\n"
                 "ディレクトリの深さやカニバリの有無を診断。重要なページへの到達性を高めるサイトマップ整理案を提言。\n"
                 "#### 【表示速度への構造的配慮】\n"
-                "WebP対応やLazy Load等の技術的配慮の有無を判定。自社が技術力で信頼を得るための実装改善を提言。\n"
+                "WebP対応やLazy Load等の技術配慮の有無を判定。自社が技術力で信頼を得るための実装改善を提言。\n"
                 "#### 【情報の鮮度（Freshness）】\n"
                 "過去3ヶ月の更新件数とトピック名の比較。更新頻度が対外的な信頼（生存確認）に与える影響を提言。\n\n"
                 "### ■5. 自社が勝つための戦略的コンテンツ案 5案\n"
