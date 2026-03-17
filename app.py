@@ -28,7 +28,7 @@ def get_site_content(url):
         
         # Meta Descriptionの取得
         meta_desc = soup.find("meta", attrs={"name": "description"})
-        description = meta_desc["content"].strip() if meta_desc else "設定なし"
+        description = meta_desc["content"].strip() if meta_desc else "未設定"
         
         # 本文テキストの抽出
         for s in soup(['script', 'style', 'nav', 'footer', 'header', 'aside']):
@@ -83,6 +83,26 @@ with st.sidebar:
                 st.session_state.c2_res = get_site_content(comp2_url) if comp2_url else {"description": "なし", "content": "なし"}
                 st.session_state.urls = {"my": my_url, "c1": comp1_url, "c2": comp2_url if comp2_url else "-"}
                 
+                # 業界特定のメッセージ作成（修正済み）
+                industry_prompt = f"業界名を回答せよ。余計な言葉は不要。\n\n自社:{st.session_state.my_res['content']}\n競合:{st.session_state.c1_res['content']}"
+                
                 response = client.chat.completions.create(
                     model="gpt-4o",
-                    messages=[{"role": "user", "content": f"業界名を回答せよ。余計な言葉は不要。\n\n自社:{st.session_state.my_res['
+                    messages=[{"role": "user", "content": industry_prompt}],
+                    temperature=0.0
+                )
+                st.session_state.industry = response.choices[0].message.content.replace("業界", "")
+                st.session_state.step = 2
+
+if st.session_state.step >= 2:
+    st.subheader("📌 業界確認と詳細診断の実行")
+    industry_input = st.text_input("特定された業界", value=st.session_state.industry)
+    
+    if st.button("診断を開始する"):
+        st.session_state.industry = industry_input
+        with st.spinner("全コンテンツを詳細診断中..."):
+            diag_response = client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {"role": "system", "content": """あなたは丁寧かつ論理的、客観的な視点を持つ超一流のWebストラテジストです。
+1.
