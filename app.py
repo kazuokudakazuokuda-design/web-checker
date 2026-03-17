@@ -6,9 +6,9 @@ import streamlit.components.v1 as components
 import re
 
 # 1. 画面構成
-st.set_page_config(page_title="🛡️ 実務直結型・Web戦略診断", layout="wide")
-st.title("🛡️ 実務直結型・Web戦略診断")
-st.caption("※物理数値の格差から、現場への『具体的な改善命令』を導き出します。")
+st.set_page_config(page_title="🛡️ 経営直結型・Web戦略診断", layout="wide")
+st.title("🛡️ 経営直結型・Web戦略診断")
+st.caption("※一般論を禁止し、物理数値から『現場への具体的な修正命令』を生成します。")
 
 # --- 入力エリア ---
 st.divider()
@@ -57,9 +57,6 @@ def get_site_metrics(url):
         avg_p_len = total_chars / len(p_tags) if len(p_tags) > 0 else 0
         
         nums = len(re.findall(r'\d+', text_content))
-        has_faq = any(k in text_content for k in ["よくある質問", "FAQ", "Q&A", "疑問"])
-        has_service = any(k in text_content for k in ["サービス", "案内", "メニュー", "料金"])
-
         metrics = {
             "unique_links": unique_internal_links,
             "h_count": len(h_tags),
@@ -68,8 +65,6 @@ def get_site_metrics(url):
             "alt_missing": alt_missing,
             "avg_p_len": int(avg_p_len),
             "num_count": nums,
-            "has_faq": "あり" if has_faq else "なし",
-            "has_service": "あり" if has_service else "なし",
             "text": text_content[:8000] 
         }
         return metrics
@@ -97,9 +92,8 @@ def copy_to_clipboard_js(text):
 if 'step' not in st.session_state:
     st.session_state.step = 1
     st.session_state.industry = ""
-    st.session_state.full_report = ""
 
-if st.button("STEP 1: サイト情報を解析"):
+if st.button("STEP 1: サイト解析"):
     if not my_url or not comp1_url:
         st.error("URLを入力してください。")
     else:
@@ -116,38 +110,41 @@ if st.button("STEP 1: サイト情報を解析"):
 
 if st.session_state.step >= 2:
     st.divider()
-    st.subheader("📌 具体的戦略レポート生成")
     industry_input = st.text_input("解析業界", value=st.session_state.industry)
     
-    if st.button("STEP 2: 診断レポート生成"):
+    if st.button("STEP 2: 戦略診断レポートを生成"):
         st.session_state.industry = industry_input
         with st.spinner("診断中"):
             
             def fmt_m(m):
                 if not m: return "データなし"
-                return (f"推定ページ数:{m['unique_links']}, 見出し数:{m['h_count']}, リンク総数:{m['a_count']}, "
-                        f"画像数:{m['img_count']}(Alt欠落:{m['alt_missing']}), 段落長:{m['avg_p_len']}字, "
-                        f"数値/固有名詞出現数:{m['num_count']}, FAQ:{m['has_faq']}, 案内:{m['has_service']}")
+                return (f"ページ数:{m['unique_links']}, 見出し:{m['h_count']}, リンク:{m['a_count']}, "
+                        f"画像:{m['img_count']}(Alt欠落:{m['alt_missing']}), 1段落:{m['avg_p_len']}字, "
+                        f"数値出現数:{m['num_count']}")
 
             m_data = f"自社: {fmt_m(st.session_state.my_m)}\n競合A: {fmt_m(st.session_state.c1_m)}\n"
             if st.session_state.c2_m: m_data += f"競合B: {fmt_m(st.session_state.c2_m)}\n"
 
             sys_msg = (
-                f"あなたは{st.session_state.industry}業界のWeb戦略の鬼と呼ばれる専門家です。\n"
-                "丁寧な『ですます調』を用いつつ、一般論を一切排した『実務上の急務』を突きつけるレポートを作成してください。\n\n"
-                "【出力の絶対ルール】\n"
-                "1. **『示唆：』の解像度を最大化せよ**：\n"
-                "   - 『〜すべきです』で終わらせず、『自社の〇〇という数値は、競合と比較して実務上の△△という機会損失を招いている。具体的に、[どのページ]の[どの見出し]を、[どのような実務用語]を用いてリライト・分割せよ』と具体的に指示してください。\n"
-                "2. **実務用語の強制使用**：『最新事例』等の汎用ワードは禁止。業界に即した具体的名称（例：求人票リライト実績、成約率改善データ等）を使用してください。\n"
-                "3. **鮮度のリスク指摘**：更新日が不明であることに対し、放置されている恐怖（顧客が『この会社は動いていない』と判断する心理的損失）を具体的に綴ってください。\n"
-                "4. **2x3アクションプラン**：最優先・優先・次のステップの各時間軸で2つずつ、『どのページのどの箇所をいじるか』を指定したタスクを提示してください。"
+                f"あなたは{st.session_state.industry}業界のWebコンサルタントです。\n"
+                "丁寧な『ですます調』を用い、社長が現場へ即時命令できる超具体的なレポートを作成してください。\n\n"
+                "【禁止事項】\n"
+                "・『〜を増やしましょう』『〜を充実させましょう』等の曖昧な表現は一切禁止です。\n"
+                "・『最新事例』『コンテンツ』等の汎用ワードも禁止。業界の実務用語（例：『求人票のリライト案』『成約単価の比較表』等）に置き換えてください。\n\n"
+                "【記述の鉄則】\n"
+                "1. **物理数値からの逆引き**：\n"
+                "   - 例：『見出しが競合より80個少ない』事実に対し、『これはユーザーの〇〇という悩みに答える入り口が80箇所足りないということであり、致命的な機会損失です。具体的に[どのページ]に[どのような内容のh3見出し]を足せ』と書いてください。\n"
+                "2. **示唆の具体性**：\n"
+                "   - 構造的視点：数値差がSEOやUXに与える物理的な悪影響。\n"
+                "   - 業界的視点：その業界の顧客心理に基づいた、具体的リライト案やカテゴリ案の提示。\n"
+                "3. **アクションプラン**：最優先・優先・次のステップの2x3形式。AIの推測を働かせ、『どのページの、どのテキストを、どう書き換えるか』をピンポイントで指定してください。"
             )
             
             user_msg = (
                 f"業界: {st.session_state.industry}\n"
-                f"物理数値データ:\n{m_data}\n"
+                f"データ:\n{m_data}\n"
                 f"自社テキスト抜粋: {st.session_state.my_m['text'][:4500]}\n\n"
-                "以下の構成で作成してください：\n\n"
+                "構成：\n"
                 "### ■ 物理構造スペック比較（表形式）\n"
                 "### ■1. コンテンツの実務解像度分析\n"
                 "#### 【実績の裏付け（証拠の密度）】\n"
@@ -161,17 +158,17 @@ if st.session_state.step >= 2:
                 "### ■4. SEO / LLMO 診断（構造と鮮度）\n"
                 "#### 【内部構造（見出し・リンク）】\n"
                 "#### 【サイト構造（階層・網羅性）】\n"
-                "#### 【情報の鮮度と生存確認】\n\n"
+                "#### 【情報の鮮度と生存確認】\n"
+                "（※更新日不明を『動いていないリスク』として具体的にえぐってください）\n\n"
                 "### ■5. 自社が勝つための具体的コンテンツ企画 5案\n"
                 "### ■6. 最優先改善アクションプラン（自社用）\n"
-                "（最優先・優先・次ステップの2x3形式で、修正ページや箇所をピンポイント指定すること）"
+                "（2x3形式で、修正ページや見出し名を具体的に指定すること）"
             )
             
             diag_res = client.chat.completions.create(model="gpt-4o", messages=[{"role": "system", "content": sys_msg}, {"role": "user", "content": user_msg}], temperature=0.0)
             st.session_state.full_report = diag_res.choices[0].message.content
-            st.session_state.step = 3
 
-if st.session_state.step >= 3:
-    st.divider()
-    st.markdown(st.session_state.full_report)
-    copy_to_clipboard_js(st.session_state.full_report)
+    if st.session_state.get("full_report"):
+        st.divider()
+        st.markdown(st.session_state.full_report)
+        copy_to_clipboard_js(st.session_state.full_report)
