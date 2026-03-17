@@ -5,11 +5,11 @@ from openai import OpenAI
 import streamlit.components.v1 as components
 
 # 1. 画面構成
-st.set_page_config(page_title="🛡️ 業界特化型 Web戦略診断", layout="wide")
-st.title("🛡️ 業界特化型 Web戦略診断")
-st.caption("※生成AIによる一次診断です。自社の戦略立案のヒントとしてご活用ください。")
+st.set_page_config(page_title="🛡️ Web戦略・実装構造 比較診断", layout="wide")
+st.title("🛡️ Web戦略・実装構造 比較診断")
+st.caption("※生成AIによる分析です。実務上の最終判断は専門家と協議の上で行ってください。")
 
-# Secrets
+# API設定
 try:
     api_key = st.secrets["OPENAI_API_KEY"].strip().strip('"')
     client = OpenAI(api_key=api_key)
@@ -26,20 +26,27 @@ def get_site_content(url):
         r.encoding = r.apparent_encoding
         soup = BeautifulSoup(r.text, "html.parser")
         
-        # Meta Description
+        # Meta情報
         meta_desc = soup.find("meta", attrs={"name": "description"})
         description = meta_desc["content"].strip() if meta_desc else "未設定"
         
-        # 本文テキスト抽出
+        # 本文テキスト（タグ構造を維持して抽出）
         for s in soup(['script', 'style', 'nav', 'footer', 'header', 'aside']):
             s.decompose()
         lines = []
-        for tag in soup.find_all(['title', 'h1', 'h2', 'h3', 'h4', 'p', 'li', 'dt', 'dd', 'table']):
-            text = tag.get_text().strip()
-            if len(text) > 2:
-                lines.append(f"<{tag.name}>{text}")
-        content = "\n".join(lines)[:8500]
+        for tag in soup.find_all(['title', 'h1', 'h2', 'h3', 'h4', 'p', 'li', 'dt', 'dd', 'table', 'img']):
+            if tag.name == 'img':
+                # 画像の最適化（Lazyload/WebP）の判定用属性を擬似的にテキスト化
+                lazy = "lazy-ok" if tag.get('loading') == 'lazy' else "lazy-ng"
+                src = tag.get('src', '')
+                webp = "webp-ok" if ".webp" in src.lower() else "webp-ng"
+                lines.append(f"<img_spec>{lazy}_{webp}")
+            else:
+                text = tag.get_text().strip()
+                if len(text) > 2:
+                    lines.append(f"<{tag.name}>{text}")
         
+        content = "\n".join(lines)[:8500]
         return {"description": description, "content": content}
     except Exception as e:
         return {"description": "取得エラー", "content": "データ取得エラー"}
@@ -56,8 +63,8 @@ def copy_to_clipboard_js(text):
     }}
     </script>
     <button onclick="copyText()" style="
-        background-color: #ff4b4b; color: white; border: none; padding: 10px 20px;
-        border-radius: 5px; cursor: pointer; font-weight: bold; width: 100%; margin-bottom: 20px;
+        background-color: #4CAF50; color: white; border: none; padding: 12px 24px;
+        border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%; margin-bottom: 20px;
     ">📋 レポートをコピーする（Markdown形式）</button>
     """
     return components.html(js_code, height=70)
@@ -68,15 +75,15 @@ if 'step' not in st.session_state:
     st.session_state.full_report = ""
 
 with st.sidebar:
-    st.header("🔍 解析対象設定")
+    st.header("🔍 診断対象設定")
     my_url = st.text_input("自社URL", placeholder="https://example.com")
     comp1_url = st.text_input("競合A", placeholder="https://competitor-a.com")
     comp2_url = st.text_input("競合B", placeholder="（任意）")
-    if st.button("STEP 1: 業界を特定する"):
+    if st.button("STEP 1: サイト情報を解析"):
         if not my_url or not comp1_url:
             st.error("自社と競合AのURLは必須です。")
         else:
-            with st.spinner("業界を解析中..."):
+            with st.spinner("各サイトの構造を読み取っています..."):
                 st.session_state.my_res = get_site_content(my_url)
                 st.session_state.c1_res = get_site_content(comp1_url)
                 st.session_state.c2_res = get_site_content(comp2_url) if comp2_url else {"description": "なし", "content": "なし"}
@@ -92,60 +99,51 @@ with st.sidebar:
                 st.session_state.step = 2
 
 if st.session_state.step >= 2:
-    st.subheader("📌 業界確認と詳細診断の実行")
+    st.subheader("📌 診断の実行")
     industry_input = st.text_input("特定された業界", value=st.session_state.industry)
     
-    if st.button("診断を開始する"):
+    if st.button("詳細レポートを生成"):
         st.session_state.industry = industry_input
-        with st.spinner("プロフェッショナル戦略診断を実行中..."):
+        with st.spinner("戦略的な提言を構成しています..."):
             sys_msg = (
-                "あなたは超一流のWebストラテジストです。\n"
-                "以下の記述ルールを厳守してください。\n"
-                "1. 文章は短く切ってください。「〜ですが、」「〜であり、」といった接続助詞による長文を禁止します。\n"
+                "あなたは丁寧で論理的なWebストラテジストです。\n"
+                "以下の記述ルールを徹底してください。\n"
+                "1. 文章は短く切り、リズムを作ってください。「〜ですが、」「〜であり、」といった接続助詞による長文を禁止します。\n"
                 "2. 項目名と本文の間には必ず改行を入れてください。\n"
                 "3. 競合に関してはテキストデータに基づく『客観的事実』のみを端的に記述してください。\n"
-                "4. 自社に関しては、事実に基づいた『戦略的な深掘り提言』を圧倒的な文章量で記述してください。社長へのアドバイスとして断定的に書いてください。\n"
-                "5. 「不明」は厳禁です。データにない場合は「記載がない」と断定し、自社の場合はそのリスクを論じてください。\n"
-                "6. デザインの感想など視覚的推測は禁止。タグ構造とテキストのみで分析してください。"
+                "4. 自社に関しては、事実に基づいた『戦略的な深掘り提言』を圧倒的な文章量で記述してください。礼節を保ちつつ、プロとしての改善策を断定的に書くこと。\n"
+                "5. 煽りや不適切な暴言は厳禁。機会損失の解消や顧客信頼の向上という視点で論じてください。\n"
+                "6. 「不明」は禁止。データにない場合は「記載がない」と断定し、自社の場合はその欠落が招くリスクと補完策を詳述してください。"
             )
             
             user_msg = (
                 f"【対象業界】: {st.session_state.industry}\n"
-                f"【自社テキスト】: {st.session_state.my_res['content']}\n"
-                f"【競合Aテキスト】: {st.session_state.c1_res['content']}\n"
-                f"【競合Bテキスト】: {st.session_state.c2_res['content']}\n"
-                f"【各サイト Description】: 自社:{st.session_state.my_res['description']} / A:{st.session_state.c1_res['description']} / B:{st.session_state.c2_res['description']}\n\n"
-                "制作会社の社長に提出する、現場指示書レベルのレポートを作成してください。\n\n"
+                f"【自社URL】: {st.session_state.urls['my']}\n"
+                f"【自社データ】: {st.session_state.my_res['content']}\n"
+                f"【競合データ】: A:{st.session_state.c1_res['content']} / B:{st.session_state.c2_res['content']}\n\n"
+                "以下の構成でレポートを作成してください。\n\n"
                 "### ■1. コンテンツの実務解像度分析\n"
                 "#### 【実績の裏付け（証拠の密度）】\n"
-                "競合の具体的数値・事例名の有無と、自社が持つ実績の山をどう戦略的に見せ直すべきか提言してください。\n"
-                "#### 【提供価値の具体的証明（ロジック）】\n"
-                "競合の課題解決フローの有無と、自社の独自プロセスをどう言語化すべきか提言してください。\n\n"
+                "競合の具体的数値・事例名の有無と、自社実績を単なる数から『信頼の根拠』へ昇華させるための提言を記述。\n\n"
                 "### ■2. 成約導線とスマホUXの物理解析\n"
                 "#### 【CTAとマイクロコピー】\n"
-                "ボタン周辺の安心させる文言の有無を比較。自社の成約ハードルを下げるための具体的文言を提言してください。\n"
+                "ボタン周辺の安心させる文言の有無を比較。自社の成約ハードルを下げるための具体的文言案を提言。\n"
                 "#### 【テキスト構造と可読性】\n"
-                "1文の長さや箇条書き活用度による離脱リスクを比較。自社のリライト方針を提言してください。\n\n"
-                "### ■3. EEAT 診断\n"
-                "#### 【経験（Experience）】\n"
-                "独自の工程や工夫の記述を比較。自社の知見をどう1次情報化すべきか提言してください。\n"
+                "1文の長さや箇条書き活用度による離脱リスク比較。自社のリライト方針を提言。\n\n"
+                "### ■3. EEAT 診断（情報の権威性と信頼性）\n"
                 "#### 【専門性（Expertise）】\n"
-                "技術解説の解像度を比較。自社が勝つための専門コンテンツ制作戦略を提言してください。\n"
+                "技術解説の解像度比較。自社が勝つための専門コンテンツ制作戦略を提言。\n"
                 "#### 【権威性（Authoritativeness）】\n"
-                "公的証明や固有名詞の有無を比較。自社の権威付けをどう強化すべきか提言してください。\n"
-                "#### 【信頼性（Trustworthiness）】\n"
-                "透明性の事実比較。自社が顧客の『最後の一押し』を勝ち取るための改善案を提言してください。\n\n"
+                "外部評価、業界団体、メディア実績等の有無を比較。自社の権威付けをどう強化すべきか（創業年数や特定知見の体系化など）を提言。\n\n"
                 "### ■4. SEO / LLMO 診断\n"
                 "#### 【内部構造（見出し・リンク）】\n"
-                "見出しタグの論理性と内部リンクのアンカーテキストの適切性を診断し、自社への改善案を提言してください。\n"
+                "見出しタグの具体性とアンカーテキスト（指示語の有無）を診断。自社への具体的な改善案を提言。\n"
                 "#### 【サイト構造（階層・網羅性）】\n"
-                "クリック階層の深さやページのカニバリ有無を診断し、自社のサイトマップ整理案を提言してください。\n"
+                "ディレクトリの深さやカニバリの有無を診断。重要なページへの到達性を高めるサイトマップ整理案を提言。\n"
                 "#### 【表示速度への構造的配慮】\n"
-                "WebP対応やLazy Load等の技術的配慮の有無をタグから判定。自社が技術力で信頼を得るための提言をしてください。\n"
+                "WebP対応やLazy Load等の技術的配慮の有無を判定。自社が技術力で信頼を得るための実装改善を提言。\n"
                 "#### 【情報の鮮度（Freshness）】\n"
-                "過去3ヶ月の更新数・トピック名の事実比較。自社の更新頻度が信頼に与える影響を提言してください。\n"
-                "#### 【インテント適合度とセマンティック・ギャップ】\n"
-                "Description整合性比較。自社に不足する専門用語5個を軸にしたワード戦略を提言してください。\n\n"
+                "過去3ヶ月の更新件数とトピック名の比較。更新頻度が対外的な信頼（生存確認）に与える影響を提言。\n\n"
                 "### ■5. 自社が勝つための戦略的コンテンツ案 5案\n"
                 "### ■6. 最優先改善アクションプラン（自社用）"
             )
@@ -160,8 +158,8 @@ if st.session_state.step >= 2:
 
 if st.session_state.step >= 3:
     st.divider()
-    st.markdown("## 🛡️ 戦略・実務詳細診断レポート")
+    st.markdown("## 🛡️ Web戦略・実装構造 比較診断書")
     st.markdown(st.session_state.full_report)
     st.divider()
-    st.subheader("📋 レポートをコピーする")
+    st.subheader("📋 レポートを保存する")
     copy_to_clipboard_js(st.session_state.full_report)
