@@ -8,9 +8,9 @@ import re
 # 1. 画面構成
 st.set_page_config(page_title="🛡️ 業界特化型Webサイト診断", layout="wide")
 st.title("🛡️ 業界特化型Webサイト診断")
-st.caption("※物理構造数値とEEAT・SEO戦略の統合分析です。実務の改善指示書としてご活用ください。")
+st.caption("※物理数値エビデンスに基づく、EEAT・SEO・UXの統合戦略診断レポート。")
 
-# --- メインエリアに入力エリアを配置（スマホ配慮） ---
+# --- タイトル直下に入力エリア（スマホ配慮） ---
 st.divider()
 st.subheader("🔍 診断対象の設定")
 col_u1, col_u2, col_u3 = st.columns(3)
@@ -58,10 +58,7 @@ def get_site_metrics(url):
         total_chars = len(text_content.strip())
         avg_p_len = total_chars / len(p_tags) if len(p_tags) > 0 else 0
         
-        # 数値出現カウント
         nums = len(re.findall(r'\d+', text_content))
-        
-        # 特定要素の検出
         has_faq = any(k in text_content for k in ["よくある質問", "FAQ", "Q&A", "疑問"])
         has_service = any(k in text_content for k in ["サービス", "業務一覧", "メニュー", "料金"])
 
@@ -75,14 +72,10 @@ def get_site_metrics(url):
             "num_count": nums,
             "has_faq": "あり" if has_faq else "なし",
             "has_service": "あり" if has_service else "なし",
-            "text": text_content[:6500] 
+            "text": text_content[:7000] # テキストもしっかり渡す
         }
-        
-        meta_desc = soup.find("meta", attrs={"name": "description"})
-        metrics["description"] = meta_desc["content"].strip() if meta_desc else "未設定"
-        
         return metrics
-    except Exception as e:
+    except:
         return None
 
 def copy_to_clipboard_js(text):
@@ -108,23 +101,18 @@ if 'step' not in st.session_state:
     st.session_state.industry = ""
     st.session_state.full_report = ""
 
-# ステップ管理
 if st.button("STEP 1: サイト情報を解析"):
     if not my_url or not comp1_url:
         st.error("自社と競合AのURLは必須です。")
     else:
-        with st.spinner("物理構造とテキストを解析中..."):
+        with st.spinner("物理構造とコンテンツを精密解析中..."):
             st.session_state.my_m = get_site_metrics(my_url)
             st.session_state.c1_m = get_site_metrics(comp1_url)
             st.session_state.c2_m = get_site_metrics(comp2_url) if comp2_url else None
             st.session_state.urls = {"my": my_url, "c1": comp1_url, "c2": comp2_url if comp2_url else "-"}
             
             ind_prompt = f"業界名を回答せよ。余計な言葉は不要。\n\nテキスト:{st.session_state.my_m['text']}"
-            response = client.chat.completions.create(
-                model="gpt-4o",
-                messages=[{"role": "user", "content": ind_prompt}],
-                temperature=0.0
-            )
+            response = client.chat.completions.create(model="gpt-4o", messages=[{"role": "user", "content": ind_prompt}], temperature=0.0)
             st.session_state.industry = response.choices[0].message.content.replace("業界", "")
             st.session_state.step = 2
 
@@ -135,52 +123,62 @@ if st.session_state.step >= 2:
     
     if st.button("STEP 2: 詳細診断レポートを生成"):
         st.session_state.industry = industry_input
-        with st.spinner("数値と戦略の両面からレポートを構築中..."):
+        with st.spinner("数値と戦略の統合レポートを構築中...（省略なし）"):
             
             def fmt_m(m):
                 if not m: return "データなし"
-                return (f"推定ページ数:{m['unique_links']}, 見出し数:{m['h_count']}, "
-                        f"リンク総数:{m['a_count']}, 画像数:{m['img_count']}(Alt欠落:{m['alt_missing']}), "
-                        f"平均段落長:{m['avg_p_len']}字, 数値出現数:{m['num_count']}, "
-                        f"FAQ:{m['has_faq']}, サービス案内:{m['has_service']}")
+                return (f"推定ページ数:{m['unique_links']}, 見出し数:{m['h_count']}, リンク総数:{m['a_count']}, "
+                        f"画像数:{m['img_count']}(Alt欠落:{m['alt_missing']}), 平均段落長:{m['avg_p_len']}字, "
+                        f"数値/固有名詞出現数:{m['num_count']}, FAQ:{m['has_faq']}, サービス案内:{m['has_service']}")
 
-            m_data = f"【物理スペック比較】\n自社: {fmt_m(st.session_state.my_m)}\n競合A: {fmt_m(st.session_state.c1_m)}\n"
-            if st.session_state.c2_m:
-                m_data += f"競合B: {fmt_m(st.session_state.c2_m)}\n"
+            m_data = f"【物理数値エビデンス】\n自社: {fmt_m(st.session_state.my_m)}\n競合A: {fmt_m(st.session_state.c1_m)}\n"
+            if st.session_state.c2_m: m_data += f"競合B: {fmt_m(st.session_state.c2_m)}\n"
 
             sys_msg = (
-                "あなたは一流のWebストラテジストです。制作会社の社長へ提出する、現場指示書レベルのレポートを作成してください。\n"
-                "以下の構成とルールを厳守してください：\n"
-                "1. 冒頭に『物理構造スペック比較』を提示し、客観的な数値差を突きつける。\n"
-                "2. 続く診断項目では、数値を背景にしつつ、以前から定評のあるEEAT/SEOの戦略的視点で深く斬り込む。\n"
-                "3. 文章は短く切り、改行を多用する。接続助詞での長文（〜ですが、）を禁止する。\n"
-                "4. 煽りや暴言は厳禁。しかし、事実に基づく不備（Alt欠落、更新停止等）は断定的に指摘する。"
+                "あなたは一切の妥協を許さない、冷徹かつ礼節ある一流のWebストラテジストです。\n"
+                "制作会社の社長が、現場を叱咤激励し、具体的な改善を即座に命令できるレベルの『戦略指示書』を作成してください。\n"
+                "【重要：記述ルール】\n"
+                "1. 数値エビデンスを提示するだけで満足せず、必ずそこから『戦略的欠落』を抉り出すこと。\n"
+                "2. 以前合格したEEAT・SEOの各分類を1つも省略せず、すべて独立した小見出しで重厚に記述すること。\n"
+                "3. 短文で切り、改行を多用する。抽象的なポエムを禁止し、実務上の『事実』と『過酷な提言』を分けること。\n"
+                "4. 制作会社として、Alt欠落などの初歩的ミスは技術的信頼の欠如として厳しく断定すること。"
             )
             
             user_msg = (
                 f"【対象業界】: {st.session_state.industry}\n"
                 f"【物理構造データ】\n{m_data}\n"
-                f"【自社テキスト抜粋】: {st.session_state.my_m['text'][:2500]}\n\n"
-                "以下の順序で出力してください：\n\n"
+                f"【自社テキスト抜粋】: {st.session_state.my_m['text'][:3000]}\n\n"
+                "以下の構成を厳守し、各小見出しにおいて圧倒的な解像度で記述してください：\n\n"
                 "### ■ 物理構造スペック比較（事実）\n"
-                "（ここで数値をわかりやすく提示する）\n\n"
-                "### ■1. コンテンツの実務解像度分析（実績の裏付け・ロジック）\n"
-                "競合の具体的数値・事例名の有無と、自社実績を信頼の根拠へ昇華させるための提言。\n\n"
-                "### ■2. 成約導線とスマホUXの物理解析（CTA・可読性）\n"
-                "ボタン周辺の安心させる文言の有無、平均段落長による離脱リスク、FAQ/サービス案内の有無を比較診断。\n\n"
-                "### ■3. EEAT 診断（経験・専門性・権威性・信頼性）\n"
-                "独自工程の記述、技術解説の解像度、外部評価/メディア実績の有無、透明性の事実比較から、EEATを各小分類で深掘り。\n\n"
-                "### ■4. SEO / LLMO 診断（内部構造・サイトマップ・速度配慮・鮮度・インテント）\n"
-                "見出し/リンクの論理性、階層構造の深さ、WebP/Lazyload等の技術配慮、更新頻度の事実、専門用語の適合度から、SEOを各小分類で深掘り。\n\n"
+                "自社・競合の数値を一覧化し、物量の格差を視覚化せよ。\n\n"
+                "### ■1. コンテンツの実務解像度分析\n"
+                "#### 【実績の裏付け（証拠の密度）】\n"
+                "数値出現数やページ数から、実績を『単なる宣伝文句』から『信頼の証拠』へ昇華させるための提言を詳述せよ。\n\n"
+                "### ■2. 成約導線とスマホUXの物理解析\n"
+                "#### 【CTAとマイクロコピー】\n"
+                "ボタン周辺の心理障壁の除去について診断。\n"
+                "#### 【テキスト構造と可読性】\n"
+                "平均段落長の差（文字の壁）から、スマホユーザーの離脱リスクを数値で証明せよ。\n\n"
+                "### ■3. EEAT 診断（情報の権威性と信頼性）\n"
+                "#### 【専門性（Expertise）】\n"
+                "見出し数やトピックの細分化度から、技術解説の解像度不足を抉り出せ。\n"
+                "#### 【権威性（Authoritativeness）】\n"
+                "外部評価、創業年数、メディア実績の活用度を比較診断せよ。\n"
+                "#### 【信頼性（Trustworthiness）】\n"
+                "制作会社としての実装品質（Alt欠落等）から透明性と誠実さを問え。\n\n"
+                "### ■4. SEO / LLMO 診断（構造と鮮度）\n"
+                "#### 【内部構造（見出し・リンク）】\n"
+                "見出しの論理性とアンカーテキストの不備を診断せよ。\n"
+                "#### 【サイト構造（階層・網羅性）】\n"
+                "内部リンク数から、トピッククラスターの構築不全を指摘せよ。\n"
+                "#### 【情報の鮮度と生存確認】\n"
+                "更新頻度が対外的な信頼に与えるダメージを論じよ。\n\n"
                 "### ■5. 自社が勝つための戦略的コンテンツ案 5案\n"
+                "数値差を埋めるための具体的な企画を提示せよ。\n"
                 "### ■6. 最優先改善アクションプラン（自社用）"
             )
             
-            diag_res = client.chat.completions.create(
-                model="gpt-4o",
-                messages=[{"role": "system", "content": sys_msg}, {"role": "user", "content": user_msg}],
-                temperature=0.0
-            )
+            diag_res = client.chat.completions.create(model="gpt-4o", messages=[{"role": "system", "content": sys_msg}, {"role": "user", "content": user_msg}], temperature=0.0)
             st.session_state.full_report = diag_res.choices[0].message.content
             st.session_state.step = 3
 
