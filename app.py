@@ -2,6 +2,7 @@ import streamlit as st
 import requests
 from bs4 import BeautifulSoup
 from openai import OpenAI
+import streamlit.components.v1 as components
 
 # 1. 画面構成
 st.set_page_config(page_title="🛡️ 業界特化型 Web戦略診断", layout="wide")
@@ -35,6 +36,34 @@ def get_site_content(url):
         return content if len(content) > 100 else "データ取得制限あり（構造から推測）"
     except Exception as e:
         return "データ取得エラー（構造から推測）"
+
+# コピー用JavaScript関数
+def copy_to_clipboard_js(text):
+    # ダブルクォートや改行をJS用にエスケープ
+    escaped_text = text.replace("\\", "\\\\").replace("`", "\\`").replace("$", "\\$")
+    js_code = f"""
+    <script>
+    function copyText() {{
+        const text = `{escaped_text}`;
+        navigator.clipboard.writeText(text).then(() => {{
+            alert("レポートをクリップボードにコピーしました！");
+        }}).catch(err => {{
+            console.error('コピー失敗:', err);
+        }});
+    }}
+    </script>
+    <button onclick="copyText()" style="
+        background-color: #ff4b4b;
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 5px;
+        cursor: pointer;
+        font-weight: bold;
+        width: 100%;
+    ">📋 レポートをクリップボードに一括コピー</button>
+    """
+    return components.html(js_code, height=70)
 
 if 'step' not in st.session_state:
     st.session_state.step = 1
@@ -138,8 +167,6 @@ if st.session_state.step >= 3:
     
     st.divider()
     
-    # コピー用エリア
+    # コピー用「一発」ボタンの実装
     st.subheader("📋 レポートをコピーする")
-    with st.expander("Markdown形式でコピーする（クリックで展開）"):
-        st.code(st.session_state.full_report, language="")
-        st.caption("右上のアイコンをクリックしてコピーが可能です。")
+    copy_to_clipboard_js(st.session_state.full_report)
