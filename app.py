@@ -121,7 +121,7 @@ if st.session_state.step >= 2:
 
 ### ■6. 明日発注できる！最優先改善アクション指示書
 - 🚨【最優先（緊急・信頼棄損修正）】
-- ⚠️【優先（重要・競合対対抗）】
+- ⚠️【優先（重要・競合対抗）】
 - 💡【次の課題（拡張・差別化）】
 ※各項目、「〇〇ページの△△という文言を、××に変更し、□□の画像を追加せよ」というレベルまで具体的に記述すること。
 """}
@@ -132,13 +132,18 @@ if st.session_state.step >= 2:
             st.session_state.step = 3
 
 if st.session_state.step >= 3:
+    # コピーボタンをレポートの上に配置（使いやすさのため）
     st.divider()
-    st.markdown("## 🛡️ 戦略・実務詳細診断レポート")
+    col_title, col_copy = st.columns([0.7, 0.3])
+    with col_title:
+        st.markdown("## 🛡️ 戦略・実務詳細診断レポート")
+    with col_copy:
+        # Markdown形式でコピーするボタン（Streamlit標準のcopy機能付きコードブロックを活用）
+        st.copy_config = True
+        st.code(st.session_state.full_report, language="markdown")
+        st.caption("右上ボタンでレポートをMarkdown形式でコピー")
+
     st.markdown(st.session_state.full_report)
     
     # 最後に免責事項
     st.caption("※あくまで生成AIによる一次診断としてご利用ください。情報が不確かな場合があります。")
-    
-    # テキストコピー用エリア
-    st.subheader("📋 レポートをコピーする")
-    st.text_area("以下の内容をコピーしてご利用ください", value=st.session_state.full_report, height=400)
