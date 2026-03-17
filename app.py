@@ -5,9 +5,9 @@ from openai import OpenAI
 import streamlit.components.v1 as components
 
 # 1. 画面構成
-st.set_page_config(page_title="🛡️ Web戦略・実装構造 比較診断", layout="wide")
-st.title("🛡️ Web戦略・実装構造 比較診断")
-st.caption("※生成AIによる分析です。実務上の最終判断は専門家と協議の上で行ってください。")
+st.set_page_config(page_title="🛡️ 業界特化型Webサイト診断", layout="wide")
+st.title("🛡️ 業界特化型Webサイト診断")
+st.caption("※あくまで生成AIによる一次診断としてご利ください。情報が不確かな場合があります。")
 
 # API設定
 try:
@@ -158,7 +158,7 @@ if st.session_state.step >= 2:
 
 if st.session_state.step >= 3:
     st.divider()
-    st.markdown("## 🛡️ Web戦略・実装構造 比較診断書")
+    st.markdown("## 🛡️ 業界特化型Webサイト診断書")
     st.markdown(st.session_state.full_report)
     st.divider()
     st.subheader("📋 レポートを保存する")
