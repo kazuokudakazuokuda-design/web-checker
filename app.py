@@ -34,46 +34,64 @@ def get_site_content(url):
     except Exception as e:
         return f"取得失敗: {str(e)}"
 
-if 'step2_ready' not in st.session_state:
-    st.session_state.step2_ready = False
+# 状態管理
+if 'step' not in st.session_state:
+    st.session_state.step = 1
+    st.session_state.industry = ""
     st.session_state.standards = ""
 
-with st.form("input_form"):
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        my_url = st.text_input("自社URL")
-    with col2:
-        comp1_url = st.text_input("競合A")
-    with col3:
-        comp2_url = st.text_input("競合B")
-    submit_btn = st.form_submit_button("STEP 1: 業界要件を特定する")
+# 入力フォーム（STEP 1）
+with st.sidebar:
+    st.header("🔍 解析対象設定")
+    my_url = st.text_input("自社URL", value="https://namihaya.biz/")
+    comp1_url = st.text_input("競合A", value="https://uehonmachi-law.com/")
+    comp2_url = st.text_input("競合B")
+    if st.button("STEP 1: サイト解析開始"):
+        with st.spinner("サイトデータを抽出中..."):
+            st.session_state.my_data = get_site_content(my_url)
+            st.session_state.c1_data = get_site_content(comp1_url)
+            st.session_state.c2_data = get_site_content(comp2_url) if comp2_url else "データなし"
+            st.session_state.my_url_orig = my_url
+            
+            # 業界の特定
+            response = client.chat.completions.create(
+                model="gpt-4o",
+                messages=[{"role": "user", "content": f"以下のサイト情報から、この3社が属する『業界名』のみを回答せよ。余計な説明は不要。\n\n自社:{st.session_state.my_data}\n競合:{st.session_state.c1_data}"}],
+                temperature=0.0
+            )
+            st.session_state.industry = response.choices[0].message.content.replace("業界", "")
+            st.session_state.step = 2
 
-if submit_btn and my_url and comp1_url:
-    with st.spinner("業界のWeb勝ち筋を抽出中..."):
-        st.session_state.my_data = get_site_content(my_url)
-        st.session_state.c1_data = get_site_content(comp1_url)
-        st.session_state.c2_data = get_site_content(comp2_url) if comp2_url else "データなし"
-        
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[{"role": "user", "content": f"以下のサイト情報を解析し、この業界（具体的に何業界か明示せよ）でWebサイトが勝つための『5大戦略基準』を定義せよ。一般論は禁止。ユーザーが『このサイトで問い合わせるか』を決める具体的・物理的な判断基準を5つ出せ。1.[基準名]、理由、評価ポイント(3つ)の形式で。\n\n自社:{st.session_state.my_data}\n競合:{st.session_state.c1_data}"}],
-            temperature=0.0
-        )
-        st.session_state.standards = response.choices[0].message.content
-        st.session_state.step2_ready = True
-
-if st.session_state.step2_ready:
-    st.subheader("🛡️ 特定された業界Web戦略基準")
-    st.markdown(st.session_state.standards)
+# --- STEP 2: 業界確認と基準定義 ---
+if st.session_state.step >= 2:
+    st.subheader("📌 STEP 2: 業界の確認と戦略基準の定義")
+    industry_input = st.text_input("特定された業界（修正が必要な場合は書き換えてください）", value=st.session_state.industry)
     
-    if st.button("STEP 2: 詳細診断（EEAT/SEO徹底解析）を実行"):
-        with st.spinner("最新アルゴリズムに基づき精密診断中..."):
+    if st.button("この業界で戦略基準を定義する"):
+        st.session_state.industry = industry_input
+        with st.spinner(f"{st.session_state.industry}業界のWeb勝ち筋を抽出中..."):
+            response = client.chat.completions.create(
+                model="gpt-4o",
+                messages=[{"role": "user", "content": f"{st.session_state.industry}業界において、ユーザーがWebサイトで『ここに問い合わせるか』を決める具体的・物理的な判断基準（判断の物差し）を5つ定義せよ。一般論は禁止。\n1.[基準名]\n-（理由）: 重要性\n-（評価ポイント）: 具体的なチェック要素3つ\nの形式で。"}],
+                temperature=0.0
+            )
+            st.session_state.standards = response.choices[0].message.content
+            st.session_state.step = 3
+
+# --- STEP 3: 詳細診断の実行 ---
+if st.session_state.step >= 3:
+    st.divider()
+    st.markdown(f"### 🛡️ {st.session_state.industry}業界 Web戦略基準")
+    st.info(st.session_state.standards)
+    
+    if st.button("STEP 3: 最終詳細診断を実行"):
+        with st.spinner("Web上の事実格差をえぐり出し中..."):
             diag_response = client.chat.completions.create(
                 model="gpt-4o",
                 messages=[
-                    {"role": "system", "content": "あなたはGoogle検索品質評価ガイドラインおよびLLMO（AI回答最適化）に精通したシニアWebストラテジストです。最低点を10点とし、競合との『情報格差』を徹底的に暴いてください。"},
+                    {"role": "system", "content": "あなたは冷徹なWebストラテジストです。見出し、改行、太字を多用し、視覚的に分かりやすく、かつ事実に基づき厳格に診断してください。最低点は10点とします。"},
                     {"role": "user", "content": f"""
-以下の定義とWebデータに基づき、比較診断レポートを作成せよ。
+以下の基準に基づき、Webサイトに限定した比較診断レポートを作成せよ。
 
 【定義された戦略基準】: {st.session_state.standards}
 【自社Webデータ】: {st.session_state.my_data}
@@ -81,41 +99,50 @@ if st.session_state.step2_ready:
 
 以下の構成で出力すること。
 
-■0. ポジショニング分析（Web表記ベース）
-・（自社のポジション）/（競合・業界との状況）/（自社の課題）/ 全体評価（最低10点）。
+### ■0. ポジショニング分析（Web表記ベース）
+- **自社のポジション**: 現在のサイトの強み、ページ構成（事実のみ）。
+- **競合・業界との状況**: 競合がWeb上で展開しているコンテンツとの比較。
+- **自社の課題**: サイト上の情報量の差が生んでいる決定的ギャップ。
+- **全体評価**: **{st.session_state.industry}業界におけるWeb戦闘力：〇点** / 100点
 
-■1. コンテンツの「実務解像度」の分析
-全体評価：〇点　/ 【実績の裏付け】【提供価値の具体的証明】【更新頻度】（競合対比コメント）
+### ■1. コンテンツの「実務解像度」の分析
+**全体評価：〇点**
+- **【実績の裏付け】**: 競合対比コメント。
+- **【提供価値の具体的証明】**: 数字、図解、プロセスの掲載状況。
+- **【更新頻度】**: 情報の鮮度が信頼に与えるダメージ。
+> **具体的指摘**: どのページに何の情報を追加すべきか。
 
-■2. 成約導線と「顧客心理ハードル」の分析
-全体評価：〇点　/ 【初見3秒での価値理解】【プロセスの明快さ】【非言語情報の質】（スマホ環境含む）
+### ■2. 成約導線と「顧客心理ハードル」の分析
+**全体評価：〇点**
+- **【初見3秒での価値理解】**: ファーストビューのコピーの即応性。
+- **【プロセスの明快さ】**: 申し込みまでのステップ表示。
+- **【非言語情報の質】**: 写真・素材の質と信頼感。
+> **具体的指摘**: スマホ環境での離脱ポイントを特定。
 
-■3. EEAT（信頼性と専門的根拠）の徹底診断
-全体評価：〇点　コメント
-この項目は、サイト全体の信頼性を担保する『証拠』の有無を診断せよ。
-・【発信主体の実績の厚み】: 「紹介」ではなく、過去の具体的な数字、期間、プロジェクト規模など、実力の証明となる記述が競合と比べて何文字・何項目不足しているか。
-・【外部による客観的評価】: お客様の声（実名・写真の有無）、メディア掲載実績、公的資格、団体所属、表彰などの掲載状況。競合が載せているのに自社が載せていない要素を特定せよ。
-・【裏付けデータの提示】: 主張の根拠となる統計データ、公的機関へのリンク、自社調査結果など、論理的根拠の有無。
+### ■3. EEAT（信頼性と専門的根拠）の徹底診断
+**全体評価：〇点**
+- **【発信主体の実績の厚み】**: 実力の証明となる記述量（文字数・項目数）の格差。
+- **【外部による客観的評価】**: お客様の声（実名・写真）、メディア実績等の掲載状況。
+- **【裏付けデータの提示】**: 論理的根拠となるデータの有無。
 
-■4. SEO / LLMO（AI検索）適応状況の徹底診断
-最新の検索アルゴリズムと、AI検索エンジンに対する適応状況を詳細に回答せよ。
-・【インテント適合度】: ユーザーの検索意図（悩み）に対し、ページを開いてから「答え」に辿り着くまでのスクロール量や構成の悪さを指摘せよ。
-・【セマンティック・ギャップ】: AIがこのサイトを専門家と見なすために必要な「共起語」や「関連トピック」の欠落。具体的に、競合が多用しているが自社サイトに不足している専門用語を列挙せよ。
-・【LLMO適応度】: PerplexityやSearchGPTが情報を抽出しやすいリスト構造、Q&A形式、構造化データ（JSON-LD）の活用状況を診断せよ。
+### ■4. SEO / LLMO（AI検索）適応状況の徹底診断
+- **【インテント適合度】**: ユーザーの「答え」に辿り着くまでのスクロール量や構成の悪さ。
+- **【セマンティック・ギャップ】**: AIに専門家と認めさせるために不足している専門用語を列挙。
+- **【LLMO適応度】**: AI検索（Perplexity等）が引用しやすいリスト構造、Q&A形式の活用状況。
 
-■5. 競合を圧倒する「新規コンテンツ案」10選
-自社サイトに未掲載で、検索意図を網羅し、競合の隙を突くコンテンツ案（タイトル、狙い、主要キーワードを各300文字程度の熱量で想定せよ）。
+### ■5. 競合を圧倒する「新規コンテンツ案」10選
+自社サイトに**現時点で絶対に載っていない**案を、タイトル・狙い・主要キーワード含め具体的に。
 
-■6. 戦略的キーワード・ポートフォリオ（10選）
+### ■6. 戦略的キーワード・ポートフォリオ（10選）
 
-■7. ホームページ最優先改善アクション
-【最優先（緊急）】: 信頼性を棄損している不備（2つ）。
-【優先（重要）】: 競合に著しく劣るWeb上の表記（2つ）。
-【次の課題（拡張）】: 差別化のための追加コンテンツ案（2つ）。
+### ■7. 優先順位別・ホームページ改善アクション
+- **🚨【最優先（緊急）】**: 安全性・信頼性を**激しく棄損**している、または業界で必須なのにサイトにない要素（2点）。
+- **⚠️【優先（重要）】**: 安全性・信頼性に**懸念**がある、または競合に著しく劣る要素（2点）。
+- **💡【次の課題（拡張）】**: さらに差別化するための追加コンテンツ（2つ）。
 """}
                 ],
                 temperature=0.0
             )
             st.divider()
-            st.header("🛡️ 戦略・実務詳細診断レポート")
+            st.markdown("## 🛡️ 戦略・実務詳細診断レポート")
             st.markdown(diag_response.choices[0].message.content)
