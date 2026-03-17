@@ -6,11 +6,11 @@ import streamlit.components.v1 as components
 import re
 
 # 1. 画面構成
-st.set_page_config(page_title="🛡️ 経営直結・Web戦略診断（実務命令版）", layout="wide")
-st.title("🛡️ 経営直結・Web戦略診断")
-st.caption("※物理数値の格差から、現場への『具体的な修正命令』を生成します。一般論は一切排除します。")
+st.set_page_config(page_title="🛡️ 戦略Web診断：実務命令版", layout="wide")
+st.title("🛡️ 戦略Web診断：実務命令版")
+st.caption("※一般論を禁止。数値の格差から「現場が動かざるを得ない修正タスク」を突きつけます。")
 
-# --- 解析設定 ---
+# --- 設定エリア ---
 st.divider()
 st.subheader("🔍 解析対象の設定")
 col_u1, col_u2, col_u3 = st.columns(3)
@@ -86,9 +86,9 @@ if 'step' not in st.session_state:
     st.session_state.step = 1
     st.session_state.industry = ""
 
-if st.button("STEP 1: 業界を解析"):
+if st.button("STEP 1: サイトを解析"):
     if not my_url or not comp1_url:
-        st.error("URLを正しく入力してください。")
+        st.error("URLを入力してください。")
     else:
         with st.spinner("診断中"):
             st.session_state.my_m = get_site_metrics(my_url)
@@ -96,7 +96,7 @@ if st.button("STEP 1: 業界を解析"):
             st.session_state.c2_m = get_site_metrics(comp2_url) if comp2_url else None
             
             if st.session_state.my_m and st.session_state.c1_m:
-                ind_prompt = f"業界名のみを1語で回答してください。\n\nテキスト:{st.session_state.my_m['text'][:1500]}"
+                ind_prompt = f"業界名のみを1語で回答せよ。\n\nテキスト:{st.session_state.my_m['text'][:2000]}"
                 response = client.chat.completions.create(model="gpt-4o", messages=[{"role": "user", "content": ind_prompt}], temperature=0.0)
                 st.session_state.industry = response.choices[0].message.content
                 st.session_state.step = 2
@@ -105,7 +105,7 @@ if st.session_state.step >= 2:
     st.divider()
     industry_input = st.text_input("解析業界ベース", value=st.session_state.industry)
     
-    if st.button("STEP 2: 実務命令レポートを生成"):
+    if st.button("STEP 2: 具体的戦略レポートを生成"):
         st.session_state.industry = industry_input
         with st.spinner("診断中"):
             def fmt_m(m):
@@ -115,15 +115,15 @@ if st.session_state.step >= 2:
             if st.session_state.c2_m: m_data += f"競合B: {fmt_m(st.session_state.c2_m)}\n"
 
             sys_msg = (
-                f"あなたは{st.session_state.industry}業界のWebコンサルタントです。丁寧な『ですます調』で、社長が現場に即指示できるレポートを作成してください。\n\n"
-                "【鉄則】\n"
-                "1. **各項目で必ず『事実：』と『示唆：』を分離せよ。**\n"
-                "2. **『事実：』の記述**：計測された数値に加え、テキストから抽出した具体的な不備（例：〇〇という実績があるのに、個別の見出しになっていない等）を特定してください。\n"
-                "3. **『示唆：』の記述**：一般論を禁止します。『自社の数値〇〇は競合比で物理的に△△が欠落している証拠。これは業界顧客にとっての不信感に直結する。具体的に[どのページのどの見出し]を[どう書き換えるか]』と実務指示レベルで書くこと。\n"
-                "4. **段落長の正答**：自社が100字超なら「文字の壁」として短文化（箇条書き化）を命じること。競合が長くても真似させないこと。\n"
-                "5. **2x3アクションプラン**：最優先・優先・次のステップを各2つ、具体的なページとタスクを指定すること。"
+                f"あなたは{st.session_state.industry}業界のWeb戦略の鬼と呼ばれる専門家です。丁寧な『ですます調』で、社長が即決できるレポートを作成してください。\n\n"
+                "【記述ルール】\n"
+                "1. **見出しの末尾に（表形式）のようなメタ説明を書かないこと。**\n"
+                "2. 各小項目で必ず『事実：』と『示唆：』に分けること。事実には数値と具体的なページ内単語（例：OUR WORKS内の実績文など）を引用してください。\n"
+                "3. **示唆の解像度**：『数値の差（例：見出しが80個少ない）』ことが、業界の商習慣において『客にどんな不信感を与えているか』をえぐり、[どのページのどの見出し]を[どんな実務用語]で直すべきかまで名指しで書くこと。\n"
+                "4. **段落長の正答**：自社が100字超なら「スマホでの文字の壁」として短文化（箇条書き・改行）を命じること。競合が長くても追随させないこと。\n"
+                "5. **2x3アクションプラン**：最優先・優先・次のステップ各2項目。具体的な修正箇所（例：[サービスページ最下部のCTA]など）を指定すること。"
             )
-            user_msg = f"業界: {st.session_state.industry}\nデータ:\n{m_data}\nテキスト抜粋: {st.session_state.my_m['text'][:4500]}\n\nレポート構成を厳守：\n### ■ 物理構造スペック比較（表形式）\n### ■1. コンテンツの実務解像度分析\n#### 【実績の裏付け（証拠の密度）】\n### ■2. 成約導線とスマホUXの物理解析\n#### 【CTAとマイクロコピー】\n#### 【テキスト構造と可読性】\n### ■3. EEAT 診断（情報の権威性と信頼性）\n#### 【専門性（Expertise）】\n#### 【権威性（Authoritativeness）】\n#### 【信頼性（Trustworthiness）】\n### ■4. SEO / LLMO 診断（構造と鮮度）\n#### 【内部構造（見出し・リンク）】\n#### 【サイト構造（階層・網羅性）】\n#### 【情報の鮮度と生存確認】（※放置リスクを具体的にえぐる）\n### ■5. 自社が勝つための具体的戦略案 5案\n### ■6. 最優先改善アクションプラン（自社用）(2x3形式でピンポイント指示)"
+            user_msg = f"業界: {st.session_state.industry}\nデータ:\n{m_data}\n自社テキスト: {st.session_state.my_m['text'][:4500]}\n\n### ■ 物理構造スペック比較\n### ■1. コンテンツの実務解像度分析\n#### 【実績の裏付け（証拠の密度）】\n### ■2. 成約導線とスマホUXの物理解析\n#### 【CTAとマイクロコピー】\n#### 【テキスト構造と可読性】\n### ■3. EEAT 診断（情報の権威性と信頼性）\n#### 【専門性（Expertise）】\n#### 【権威性（Authoritativeness）】\n#### 【信頼性（Trustworthiness）】\n### ■4. SEO / LLMO 診断（構造と鮮度）\n#### 【内部構造（見出し・リンク）】\n#### 【サイト構造（階層・網羅性）】\n#### 【情報の鮮度と生存確認】\n### ■5. 自社が勝つための具体的戦略案 5案\n### ■6. 最優先改善アクションプラン（自社用）"
             
             diag_res = client.chat.completions.create(model="gpt-4o", messages=[{"role": "system", "content": sys_msg}, {"role": "user", "content": user_msg}], temperature=0.0)
             st.session_state.full_report = diag_res.choices[0].message.content
