@@ -6,9 +6,9 @@ import streamlit.components.v1 as components
 import re
 
 # 1. 画面構成
-st.set_page_config(page_title="🛡️ 戦略化Web診断ツール", layout="wide")
-st.title("🛡️ 戦略化Web診断ツール")
-st.caption("※物理数値と業界文脈を解析し、改善指針を提示します。")
+st.set_page_config(page_title="🛡️ 戦略的Web比較診断", layout="wide")
+st.title("🛡️ 戦略的Web比較診断")
+st.caption("※物理数値と業界特性に基づき、事実と具体的示唆を分離した改善指針を提示します。")
 
 # --- 入力エリア ---
 st.divider()
@@ -130,30 +130,30 @@ if st.session_state.step >= 2:
         with st.spinner("診断中"):
             
             def fmt_m(m):
-                if not m: return "なし"
-                # AIが表を作りやすいように生のデータリストを渡す
-                return (f"推定ページ数:{m['unique_links']}, 見出し数:{m['h_count']}, リンク総数:{m['a_count']}, "
-                        f"画像数:{m['img_count']}, Alt欠落数:{m['alt_missing']}, 平均段落長:{m['avg_p_len']}字, "
-                        f"数値・固有名詞数:{m['num_count']}, FAQ:{m['has_faq']}, サービス案内:{m['has_service']}, 最新更新日:{m['latest_date']}")
+                if not m: return "データなし"
+                return (f"推定ページ数:{m['unique_links']}, 見出し:{m['h_count']}, リンク:{m['a_count']}, "
+                        f"画像:{m['img_count']}(Alt欠落:{m['alt_missing']}), 段落長:{m['avg_p_len']}字, "
+                        f"数値・固有名詞:{m['num_count']}, FAQ:{m['has_faq']}, 案内:{m['has_service']}, 更新日:{m['latest_date']}")
 
-            m_data = f"【自社】\n{fmt_m(st.session_state.my_m)}\n\n【競合A】\n{fmt_m(st.session_state.c1_m)}\n"
-            if st.session_state.c2_m: m_data += f"\n【競合B】\n{fmt_m(st.session_state.c2_m)}\n"
+            m_data = f"【物理データ】\n自社: {fmt_m(st.session_state.my_m)}\n競合A: {fmt_m(st.session_state.c1_m)}\n"
+            if st.session_state.c2_m: m_data += f"競合B: {fmt_m(st.session_state.c2_m)}\n"
 
             sys_msg = (
-                f"あなたは{st.session_state.industry}業界のWeb戦略に精通した専門家です。\n"
-                "丁寧な『ですます調』で、社長が即決できる具体的でキレのあるレポートを作成してください。\n\n"
-                "【重要ルール】\n"
-                "1. **冒頭の『物理構造スペック比較』は、必ずMarkdownの表形式（Table）で作成してください。** 列には『項目』『自社』『競合A』『競合B（あれば）』を配置してください。\n"
-                "2. 各診断セクション（1〜4項）は必ず『事実：』と『示唆：』に分けて記述してください。\n"
-                "3. 『示唆：』には、「構造的視点（物理数値の影響）」と「業界的視点（商習慣や顧客心理）」を融合させた、プロのアドバイスを自然な文脈で記述してください。具体的リライト案やカテゴリ案を含めてください。\n"
-                "4. 5項（案）と6項（アクション）は具体的かつ実行可能な手順として丁寧に記述してください。"
+                f"あなたは{st.session_state.industry}業界のWeb戦略に精通したストラテジストです。\n"
+                "丁寧な『ですます調』で、実務に即した具体的で品格あるレポートを作成してください。\n\n"
+                "【記述ルール】\n"
+                "1. 冒頭のスペック比較は、必ずMarkdownの表形式（Table）で作成してください。\n"
+                "2. 各診断項目は必ず『事実：』と『示唆：』に分けて記述してください。\n"
+                "3. 『事実：』では、数値に加え『どのテキストで専門性を示しているか（いないか）』『どの箇所が孤立しているか』を特定してください。\n"
+                "4. 『示唆：』では、「構造的視点（SEOや回遊性への影響）」と「業界的視点（商習慣や顧客心理）」を統合し、どのページのどのトピックを肉付けすべきか具体的に推測・提言してください。\n"
+                "5. 『6. アクションプラン』は、「最優先（即日完了）」「優先（今週完了）」「次のステップ（来月完了）」の3つの時間軸で、それぞれ2つずつ具体的な改善タスクを提示してください。"
             )
             
             user_msg = (
                 f"業界: {st.session_state.industry}\n"
-                f"物理数値データ:\n{m_data}\n"
-                f"自社テキスト抜粋: {st.session_state.my_m['text'][:4000]}\n\n"
-                "以下の構成でレポートを作成してください：\n\n"
+                f"物理数値:\n{m_data}\n"
+                f"解析テキスト: {st.session_state.my_m['text'][:4500]}\n\n"
+                "以下の構成で作成してください：\n\n"
                 "### ■ 物理構造スペック比較\n"
                 "（必ず表形式で対比すること）\n\n"
                 "### ■1. コンテンツの実務解像度分析\n"
@@ -170,7 +170,8 @@ if st.session_state.step >= 2:
                 "#### 【サイト構造（階層・網羅性）】\n"
                 "#### 【情報の鮮度と生存確認】\n\n"
                 "### ■5. 自社が勝つための戦略的コンテンツ案 5案\n"
-                "### ■6. 最優先改善アクションプラン（自社用）"
+                "### ■6. 最優先改善アクションプラン（自社用）\n"
+                "（最優先・優先・次のステップの2×3形式で、具体的ページや修正箇所を指定してください）"
             )
             
             diag_res = client.chat.completions.create(model="gpt-4o", messages=[{"role": "system", "content": sys_msg}, {"role": "user", "content": user_msg}], temperature=0.0)
