@@ -16,7 +16,7 @@ except:
     st.stop()
 
 def get_site_content(url):
-    """サイトのビジネス構造を抽出"""
+    """サイトの構造、テキスト、主要な内部リンクを抽出"""
     try:
         url = url.strip()
         if not url.startswith("http"): url = "https://" + url
@@ -24,18 +24,28 @@ def get_site_content(url):
         r = requests.get(url, headers=headers, timeout=15)
         r.encoding = r.apparent_encoding
         soup = BeautifulSoup(r.text, "html.parser")
+        
+        # 不要要素の排除
         for s in soup(['script', 'style', 'nav', 'footer', 'header', 'aside']):
             s.decompose()
+            
         lines = []
-        for tag in soup.find_all(['title', 'h1', 'h2', 'h3', 'h4', 'p', 'li', 'dt', 'dd', 'table']):
-            text = tag.get_text().strip()
-            if len(text) > 2:
-                lines.append(f"<{tag.name}>{text}")
-        return "\n".join(lines)[:7500] 
+        # URL特定のために、主要なリンクテキストとhrefも少し拾う
+        for tag in soup.find_all(['title', 'h1', 'h2', 'h3', 'h4', 'p', 'li', 'dt', 'dd', 'table', 'a']):
+            if tag.name == 'a' and tag.get('href'):
+                href = tag.get('href')
+                if href.startswith('/') or url in href:
+                    lines.append(f"[Link: {tag.get_text().strip()} -> {href}]")
+            else:
+                text = tag.get_text().strip()
+                if len(text) > 2:
+                    lines.append(f"<{tag.name}>{text}")
+        
+        return "\n".join(lines)[:8000] 
     except Exception as e:
         return f"取得失敗: {str(e)}"
 
-# 状態管理（ステップ1が終わったかどうかを記憶）
+# 状態管理
 if 'step2_ready' not in st.session_state:
     st.session_state.step2_ready = False
     st.session_state.standards = ""
@@ -51,12 +61,12 @@ with st.form("input_form"):
         comp2_url = st.text_input("競合B", placeholder="（任意）")
     submit_btn = st.form_submit_button("STEP 1: 業界戦略を解読する")
 
-# --- STEP 1: 戦略基準の定義 ---
 if submit_btn and my_url and comp1_url:
-    with st.spinner("サイト群から業界の勝ち筋を抽出中..."):
+    with st.spinner("業界の勝ち筋を抽出中..."):
         st.session_state.my_data = get_site_content(my_url)
         st.session_state.c1_data = get_site_content(comp1_url)
         st.session_state.c2_data = get_site_content(comp2_url) if comp2_url else "データなし"
+        st.session_state.my_url_orig = my_url
 
         response = client.chat.completions.create(
             model="gpt-4o",
@@ -70,49 +80,61 @@ if st.session_state.step2_ready:
     st.subheader("🛡️ この業界を勝ち抜くWeb5大戦略基準")
     st.markdown(st.session_state.standards)
     
-    # --- STEP 2: 詳細診断へのボタン ---
-    if st.button("STEP 2: この基準で詳細診断を実行する"):
-        with st.spinner("基準に基づき全サイトを精密診断中..."):
+    if st.button("STEP 2: この基準で最新SEO/AI検索を含む詳細診断を実行"):
+        with st.spinner("最新の検索アルゴリズムに照らして精密診断中..."):
             diag_response = client.chat.completions.create(
                 model="gpt-4o",
                 messages=[
-                    {"role": "system", "content": "あなたは冷徹なストラテジストです。提示された5大戦略基準を『物差し』として、自社サイトを厳格に点数化し診断してください。"},
+                    {"role": "system", "content": "あなたはGoogle検索アルゴリズムとLLMO（AI回答最適化）に精通したシニアストラテジストです。最低点を10点とし、技術的・戦略的欠陥を冷徹に指摘してください。"},
                     {"role": "user", "content": f"""
-以下の基準に基づき、自社・競合の比較診断レポートを作成せよ。
+以下の基準に基づき、詳細診断レポートを作成せよ。
 
-【定義された5大戦略基準】:
-{st.session_state.standards}
-
-【解析対象データ】
-自社: {st.session_state.my_data} / 競合A: {st.session_state.c1_data} / 競合B: {st.session_state.c2_data}
+【定義された5大戦略基準】: {st.session_state.standards}
+【自社データ】: {st.session_state.my_data} (BaseURL: {st.session_state.my_url_orig})
+【競合データ】: {st.session_state.c1_data} / {st.session_state.c2_data}
 
 以下の構成で出力してください。
 
 ■0. ポジショニング分析
-・（特徴）/（競合比較）/（総合評価）を上記基準に照らして記述。
+・全体評価: 市場における現在のWeb戦闘力の判定（最低10点）。
 
 ■1. コンテンツの「実務解像度」の分析
-・総合コメント：基準に照らした自社・競合の情報の質（一次情報の有無）の比較。
-・論点評価（自社）：【実績の裏付け】〇点/40点、【提供価値の具体的証明】〇点/30点、【更新頻度と熱量】〇点/30点
-・具体的指摘：基準を満たすために自社のどの記述が「抽象的」か特定。
+全体評価：〇点　コメント
+【実績の裏付け】コメント（競合対比）
+【提供価値の具体的証明】コメント（競合対比）
+【更新頻度】コメント（競合対比）
 
 ■2. 成約導線と「顧客心理ハードル」の分析
-・総合コメント：ユーザーを「今すぐ決断」させる力の格差。
-・論点評価（自社）：【初見3秒での価値理解】〇点/40点、【プロセスの明快さ】〇点/30点、【非言語情報の質】〇点/30点
-・具体的指摘：基準を満たす上で、現在のバナー、写真、コピーのどこが「離脱」を招いているか。
+全体評価：〇点　コメント
+【初見3秒での価値理解】コメント（競合対比）
+【プロセスの明快さ】コメント（競合対比）
+【非言語情報の質】コメント（競合対比）
 
 ■3. EEAT（信頼性と専門的根拠）の診断
-・総合コメント：権威性と信頼性の格差。
-・論点評価（自社）：【発信主体の実績の厚み】〇点/40点、【外部による客観的評価】〇点/30点、【裏付けデータの提示】〇点/30点
-・具体的指摘：基準を確信させるために、自社に不足している具体的要素。
+全体評価：〇点　コメント
+【発信主体の実績の厚み】コメント（競合対比）
+【外部による客観的評価】コメント（競合対比）
+【裏付けデータの提示】コメント（競合対比）
 
-■4. SEO / LLMO（AI検索）適応状況
-・論点：【構造的回答】【セマンティック構造】【結論の提示速度】
+■4. SEO / LLMO（AI検索）適応状況の徹底診断
+この項目は専門的な観点から詳細に回答せよ。
+・【インテント適合度】: ユーザーの検索意図に対し、競合と比べて「結論の提示」がどれだけ遅いか。
+・【セマンティック・ギャップ】: AI（LLM）が文脈を理解する際に不足している専門用語や関連概念の欠落。
+・【EEATシグナルの脆弱性】: 著者情報や監修、構造化データ（JSON-LD）が不足していることによる検索順位への悪影響。
+・【LLMO（AI回答）適応度】: PerplexityやSearchGPTなどのAI検索エンジンが「このサイトを引用すべき」と判断する情報の整理状況。
 
-■5. 新規コンテンツ案 10選（5大戦略基準を強化する内容）
+■5. 競合を圧倒する「新規コンテンツ案」10選
+自社データに存在せず、かつ5大戦略基準を強化し、検索需要（ロングテール）を総なめにする案。
+
 ■6. 戦略的キーワード・ポートフォリオ（10選）
+
 ■7. 最優先改善アクション（守りと攻め）
-■8. リライト推奨ページと改善課題
+【守り（即修正）】3つ / 【攻め（拡大）】2つ
+
+■8. リライト推奨ページと改善の方向性
+自社サイト内から、修正すべきページを最大3つ特定せよ。
+・対象ページ：[ページ名] (URL: 可能な限り正確なパスを記載)
+・改善の方向性：[5大戦略基準に基づき、具体的にどう書き換えるか。特にタイトルタグや見出し、結論の配置について言及せよ]
 """}
                 ],
                 temperature=0.0
