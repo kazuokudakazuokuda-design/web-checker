@@ -6,9 +6,9 @@ import streamlit.components.v1 as components
 import re
 
 # 1. 画面構成
-st.set_page_config(page_title="🛡️ 戦略的Web比較診断", layout="wide")
-st.title("🛡️ 戦略的Web比較診断")
-st.caption("※物理数値と業界特性に基づき、事実と具体的示唆を分離した改善指針を提示します。")
+st.set_page_config(page_title="🛡️ 実務直結型・Web診断ツール", layout="wide")
+st.title("🛡️ 実務直結型・Web診断ツール")
+st.caption("※業界の実務用語に基づき、具体的リライト案とアクションを提示します。")
 
 # --- 入力エリア ---
 st.divider()
@@ -104,7 +104,7 @@ if 'step' not in st.session_state:
     st.session_state.full_report = ""
 
 # --- STEP 1 ---
-if st.button("STEP 1: サイト情報を解析"):
+if st.button("STEP 1: サイト解析"):
     if not my_url or not comp1_url:
         st.error("URLを入力してください。")
     else:
@@ -122,8 +122,8 @@ if st.button("STEP 1: サイト情報を解析"):
 # --- STEP 2 ---
 if st.session_state.step >= 2:
     st.divider()
-    st.subheader("📌 戦略診断の実行")
-    industry_input = st.text_input("解析業界", value=st.session_state.industry)
+    st.subheader("📌 具体的戦略レポート生成")
+    industry_input = st.text_input("解析業界（微調整可）", value=st.session_state.industry)
     
     if st.button("STEP 2: 診断レポート生成"):
         st.session_state.industry = industry_input
@@ -133,29 +133,27 @@ if st.session_state.step >= 2:
                 if not m: return "データなし"
                 return (f"推定ページ数:{m['unique_links']}, 見出し:{m['h_count']}, リンク:{m['a_count']}, "
                         f"画像:{m['img_count']}(Alt欠落:{m['alt_missing']}), 段落長:{m['avg_p_len']}字, "
-                        f"数値・固有名詞:{m['num_count']}, FAQ:{m['has_faq']}, 案内:{m['has_service']}, 更新日:{m['latest_date']}")
+                        f"数値/固有名詞:{m['num_count']}, FAQ:{m['has_faq']}, 案内:{m['has_service']}, 更新日:{m['latest_date']}")
 
-            m_data = f"【物理データ】\n自社: {fmt_m(st.session_state.my_m)}\n競合A: {fmt_m(st.session_state.c1_m)}\n"
+            m_data = f"自社: {fmt_m(st.session_state.my_m)}\n競合A: {fmt_m(st.session_state.c1_m)}\n"
             if st.session_state.c2_m: m_data += f"競合B: {fmt_m(st.session_state.c2_m)}\n"
 
             sys_msg = (
-                f"あなたは{st.session_state.industry}業界のWeb戦略に精通したストラテジストです。\n"
-                "丁寧な『ですます調』で、実務に即した具体的で品格あるレポートを作成してください。\n\n"
-                "【記述ルール】\n"
-                "1. 冒頭のスペック比較は、必ずMarkdownの表形式（Table）で作成してください。\n"
-                "2. 各診断項目は必ず『事実：』と『示唆：』に分けて記述してください。\n"
-                "3. 『事実：』では、数値に加え『どのテキストで専門性を示しているか（いないか）』『どの箇所が孤立しているか』を特定してください。\n"
-                "4. 『示唆：』では、「構造的視点（SEOや回遊性への影響）」と「業界的視点（商習慣や顧客心理）」を統合し、どのページのどのトピックを肉付けすべきか具体的に推測・提言してください。\n"
-                "5. 『6. アクションプラン』は、「最優先（即日完了）」「優先（今週完了）」「次のステップ（来月完了）」の3つの時間軸で、それぞれ2つずつ具体的な改善タスクを提示してください。"
+                f"あなたは{st.session_state.industry}業界の実務に精通したWebストラテジストです。\n"
+                "社長が現場へ即時指示を出せるよう、具体的で品格ある丁寧な『ですます調』でレポートを作成してください。\n\n"
+                "【出力の絶対ルール：具体性の極大化】\n"
+                "1. **汎用用語の禁止**：『最新事例』『成功事例』『コンテンツ』といった曖昧な言葉を使わず、必ず業界の実務に即した具体的名称（例：採用業界なら『採用ピッチ資料の公開』『求人票のABテスト結果』『内定承諾率の改善データ』等）に置き換えてください。\n"
+                "2. **事実と示唆の分離**：各項目で必ず『事実：』と『示唆：』に分け、示唆には『どのページのどの箇所をどう変えるか』という具体的リライト案を含めてください。\n"
+                "3. **2x3アクションプラン**：最優先・優先・次ステップの各時間軸で2つずつ、物理的な修正箇所（例：〇〇ページのh3見出し等）を指定したタスクを提示してください。\n"
+                "4. 冒頭のスペック比較は必ずMarkdownの表形式（Table）で作成してください。"
             )
             
             user_msg = (
                 f"業界: {st.session_state.industry}\n"
-                f"物理数値:\n{m_data}\n"
-                f"解析テキスト: {st.session_state.my_m['text'][:4500]}\n\n"
-                "以下の構成で作成してください：\n\n"
-                "### ■ 物理構造スペック比較\n"
-                "（必ず表形式で対比すること）\n\n"
+                f"データ:\n{m_data}\n"
+                f"自社テキスト: {st.session_state.my_m['text'][:4500]}\n\n"
+                "以下の構成で出力してください：\n\n"
+                "### ■ 物理構造スペック比較（表形式）\n"
                 "### ■1. コンテンツの実務解像度分析\n"
                 "#### 【実績の裏付け（証拠の密度）】\n"
                 "### ■2. 成約導線とスマホUXの物理解析\n"
@@ -169,9 +167,10 @@ if st.session_state.step >= 2:
                 "#### 【内部構造（見出し・リンク）】\n"
                 "#### 【サイト構造（階層・網羅性）】\n"
                 "#### 【情報の鮮度と生存確認】\n\n"
-                "### ■5. 自社が勝つための戦略的コンテンツ案 5案\n"
+                "### ■5. 自社が勝つための具体的コンテンツ企画 5案\n"
+                "（業界実務に基づいた具体的な名称と構成案を提示すること）\n\n"
                 "### ■6. 最優先改善アクションプラン（自社用）\n"
-                "（最優先・優先・次のステップの2×3形式で、具体的ページや修正箇所を指定してください）"
+                "（最優先・優先・次のステップの2x3形式。修正ページや箇所をピンポイントで指定すること）"
             )
             
             diag_res = client.chat.completions.create(model="gpt-4o", messages=[{"role": "system", "content": sys_msg}, {"role": "user", "content": user_msg}], temperature=0.0)
