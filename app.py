@@ -40,27 +40,30 @@ if 'step' not in st.session_state:
     st.session_state.industry = ""
     st.session_state.standards = ""
 
-# 入力フォーム（STEP 1）
+# 入力フォーム（STEP 1） - URLを空に修正
 with st.sidebar:
     st.header("🔍 解析対象設定")
-    my_url = st.text_input("自社URL", value="https://namihaya.biz/")
-    comp1_url = st.text_input("競合A", value="https://uehonmachi-law.com/")
-    comp2_url = st.text_input("競合B")
+    my_url = st.text_input("自社URL", value="", placeholder="https://example.com")
+    comp1_url = st.text_input("競合A", value="", placeholder="https://competitor-a.com")
+    comp2_url = st.text_input("競合B", value="", placeholder="（任意）")
     if st.button("STEP 1: サイト解析開始"):
-        with st.spinner("サイトデータを抽出中..."):
-            st.session_state.my_data = get_site_content(my_url)
-            st.session_state.c1_data = get_site_content(comp1_url)
-            st.session_state.c2_data = get_site_content(comp2_url) if comp2_url else "データなし"
-            st.session_state.my_url_orig = my_url
-            
-            # 業界の特定
-            response = client.chat.completions.create(
-                model="gpt-4o",
-                messages=[{"role": "user", "content": f"以下のサイト情報から、この3社が属する『業界名』のみを回答せよ。余計な説明は不要。\n\n自社:{st.session_state.my_data}\n競合:{st.session_state.c1_data}"}],
-                temperature=0.0
-            )
-            st.session_state.industry = response.choices[0].message.content.replace("業界", "")
-            st.session_state.step = 2
+        if not my_url or not comp1_url:
+            st.error("自社と競合AのURLは必須です。")
+        else:
+            with st.spinner("サイトデータを抽出中..."):
+                st.session_state.my_data = get_site_content(my_url)
+                st.session_state.c1_data = get_site_content(comp1_url)
+                st.session_state.c2_data = get_site_content(comp2_url) if comp2_url else "データなし"
+                st.session_state.my_url_orig = my_url
+                
+                # 業界の特定
+                response = client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[{"role": "user", "content": f"以下のサイト情報から、この3社が属する『業界名』のみを回答せよ。余計な説明は不要。\n\n自社:{st.session_state.my_data}\n競合:{st.session_state.c1_data}"}],
+                    temperature=0.0
+                )
+                st.session_state.industry = response.choices[0].message.content.replace("業界", "")
+                st.session_state.step = 2
 
 # --- STEP 2: 業界確認と基準定義 ---
 if st.session_state.step >= 2:
@@ -107,7 +110,7 @@ if st.session_state.step >= 3:
 
 ### ■1. コンテンツの「実務解像度」の分析
 **全体評価：〇点**
-- **【実績の裏付け】**: 競合対比コメント。
+- **【実績の裏付け】**: 競合対比コメント（事実ベース）。
 - **【提供価値の具体的証明】**: 数字、図解、プロセスの掲載状況。
 - **【更新頻度】**: 情報の鮮度が信頼に与えるダメージ。
 > **具体的指摘**: どのページに何の情報を追加すべきか。
