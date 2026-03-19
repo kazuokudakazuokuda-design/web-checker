@@ -5,13 +5,13 @@ import google.generativeai as genai
 from urllib.parse import urlparse, urljoin
 import time
 
-# --- 1. 基本設定・看板表示 [cite: 77, 78] ---
+# --- 1. 基本設定・看板表示 ---
 st.set_page_config(page_title="🛡️ Web構造比較診断", layout="wide")
 
 st.markdown("""
 ### 🛡️ Web構造比較診断
-**【概要】** 本ツールは、自社と競合のWebサイトを「物理構造」と「コンテンツ内容」の両面から比較し、4つのステップで実務的な改善案を抽出します [cite: 77]。  
-**【免責事項】** 本診断は生成AIによる診断です。推測、不正確な情報を含む可能性がありますので、一次診断用として参考に使用ください [cite: 78]。
+**【概要】** 本ツールは、自社と競合のWebサイトを「物理構造」と「コンテンツ内容」の両面から比較し、4つのステップで実務的な改善案を抽出します [cite: 77, 133]。  
+**【免責事項】** 本診断は生成AIによる診断です。推測、不正確な情報を含む可能性がありますので、一次診断用として参考に使用ください [cite: 78, 134]。
 """)
 
 if 'step' not in st.session_state:
@@ -25,7 +25,7 @@ except Exception as e:
     st.error(f"初期設定エラー: {e}")
     st.stop()
 
-# --- 2. 物理構造解析関数 [cite: 97] ---
+# --- 2. 物理構造解析関数 ---
 def analyze_site_physics(url, limit_pages=40):
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36"}
     url = url.strip()
@@ -46,16 +46,12 @@ def analyze_site_physics(url, limit_pages=40):
     domain = urlparse(url).netloc
     internal_links = [urljoin(url, l['href']) for l in all_links if domain in urljoin(url, l['href'])]
     
-    asset_counts = {"事例": 0, "ブログ": 0, "料金": 0, "会社情報": 0, "FAQ": 0, "導線": 0}
-    # 30-50ページを巡回 [cite: 97]
+    # コンテンツの抽出
+    asset_counts = {"事例": 0, "ブログ": 0}
     for link in list(set(internal_links))[:limit_pages]:
         l_lower = link.lower()
         if any(x in l_lower for x in ["case", "jirei", "works", "results"]): asset_counts["事例"] += 1
         if any(x in l_lower for x in ["blog", "column", "news"]): asset_counts["ブログ"] += 1
-        if any(x in l_lower for x in ["price", "fee", "hiyo", "ryokin"]): asset_counts["料金"] += 1
-        if any(x in l_lower for x in ["about", "company", "office", "access", "profile"]): asset_counts["会社情報"] += 1
-        if any(x in l_lower for x in ["faq", "qa", "question"]): asset_counts["FAQ"] += 1
-        if any(x in l_lower for x in ["contact", "inquiry", "entry", "form", "reserve", "line"]): asset_counts["導線"] += 1
 
     return {
         "title": (soup.title.string[:20] + "...") if soup.title and len(soup.title.string) > 20 else (soup.title.string if soup.title else "No Title"),
@@ -63,84 +59,90 @@ def analyze_site_physics(url, limit_pages=40):
         "h1": h1_count, "h2": h2_count, "total_links": len(all_links),
         "internal_links_count": len(internal_links),
         "asset_counts": asset_counts,
-        "body_preview": soup.get_text()[:800]
+        "body_preview": soup.get_text()[:1200] # 更新日抽出用に長めに取得
     }
 
 # --- 3. メインUI ---
 col_u1, col_u2, col_u3 = st.columns(3)
-with col_u1: my_url = st.text_input("自社URL", key="my_url") # [cite: 80]
-with col_u2: comp1_url = st.text_input("競合A", key="c1_url") # [cite: 84]
-with col_u3: comp2_url = st.text_input("競合B (任意)", key="c2_url") # [cite: 85]
+with col_u1: my_url = st.text_input("自社URL", key="my_url_input")
+with col_u2: comp1_url = st.text_input("競合A", key="c1_url_input")
+with col_u3: comp2_url = st.text_input("競合B (任意)", key="c2_url_input")
 
 # STEP 1: 業界判定
-if st.button("STEP 1：業界を判定"): # [cite: 81]
+if st.button("STEP 1：業界を判定"):
     if not my_url or not comp1_url:
         st.warning("自社と競合AのURLを入力してください。")
     else:
-        with st.spinner("サイトをスキャン中..."):
+        with st.spinner("解析中..."):
             st.session_state.my_data = analyze_site_physics(my_url)
             st.session_state.c1_data = analyze_site_physics(comp1_url)
             st.session_state.c2_data = analyze_site_physics(comp2_url) if comp2_url else None
             
             if "error" in st.session_state.my_data or "error" in st.session_state.c1_data:
-                st.error("解析エラー。URLを確認してください。")
+                st.error("解析エラー。URLを再確認してください。")
             else:
                 p1 = f"業界名を単語1つで回答せよ。タイトル:{st.session_state.my_data['title']} 内容:{st.session_state.my_data['desc']}"
-                st.session_state.industry = model.generate_content(p1).text.strip() # [cite: 90]
+                st.session_state.industry = model.generate_content(p1).text.strip()
                 st.session_state.step = 2
 
 if st.session_state.step >= 2:
     st.divider()
-    # 業界名の修正機能 [cite: 89]
+    # 業界名修正 [cite: 89, 142]
     st.session_state.industry = st.text_input("業界名（修正が必要な場合は書き換えてください）", st.session_state.industry)
     
-    # トップページのメタディスクリプション表示 [cite: 86-88]
+    # メタディスクリプション表示 [cite: 144-146]
     st.write("**トップページのメタディスクリプション**")
     st.write(f"・自社：{st.session_state.my_data['desc']}")
     st.write(f"・競合A：{st.session_state.c1_data['desc']}")
+    if st.session_state.c2_data:
+        st.write(f"・競合B：{st.session_state.c2_data['desc']}")
     
-    if st.button("診断レポートを一括生成"): # [cite: 91]
+    if st.button("診断レポートを一括生成"):
         with st.spinner("レポート生成中..."):
             def get_stat_text(d):
                 if not d or "error" in d: return "データなし"
-                return f"タイトル:{d['title']}, h1:{d['h1']}, h2:{d['h2']}, 内部リンク:{d['internal_links_count']}, 資産:{d['asset_counts']}, プレビュー:{d['body_preview']}"
+                return f"タイトル:{d['title']}, h1:{d['h1']}, h2:{d['h2']}, 内部リンク:{d['internal_links_count']}, 事例:{d['asset_counts']['事例']}, ブログ:{d['asset_counts']['ブログ']}, プレビュー:{d['body_preview']}"
             
             c2_info = get_stat_text(st.session_state.c2_data) if st.session_state.c2_data else "なし"
             
             prompt_main = f"""
-            Webコンサルタントとして、問い合わせ（CV）最大化のためのレポートを作成してください [cite: 92, 93]。
-            【STEP 2：調査レポート】 [cite: 94]
-            Markdownで1つの比較表を作成せよ。会社名が行、項目が列となるようにし、横スクロールが発生しないよう項目名を短縮せよ。
-            項目：タイトル, H1, H2, 内部リンク, 事例, ブログ, 料金, 会社情報, FAQ, 導線
-            表の直下に「※数値はサイト内30〜50ページを巡回した推測値です」と記載せよ [cite: 97]。
-
-            【STEP 3：診断レポート】 [cite: 98]
-            以下の見出しと、小見出しを用いて記述せよ。
-            1. EEAT診断（経験・専門性 / 権威性 / 信頼性） [cite: 99]
-            2. SEO / LLMO診断（構造の明快さ / 情報の網羅性とリンク構造 / キーワードの接点と継続性） [cite: 103]
-            3. その他（CTA・可読性） [cite: 107]
+            Webコンサルタントとしてレポートを作成してください。挨拶や導入文は不要です。
             
-            記述形式：各小見出しの下で、以下の4つのブロック（改行）で構成せよ。ラベルは不要。
-            ・第1段：事実（自社〇件対競合〇件）
-            ・第2段：物理的不足（0や低数値は「AIや検索エンジンが見つけにくい構造」と解釈せよ）
-            ・第3段：(リスク・要チェック)
-            ・第4段：影響（ユーザーがどう迷い問い合わせず離脱するか）
+            【STEP 2：調査レポート】
+            Markdownで1つの比較表を作成せよ。会社名を縦軸（行）、項目を横軸（列）にすること。
+            項目：サイトタイトル, H1数, H2数, 内部リンク, 事例数, ブログ数, 最終更新日
+            ※最終更新日は解析データのプレビュー内容から推測して「202X/XX/XX」形式で記述せよ。不明なら「不明」でよい。
+            表の直下に「※数値はサイト内30〜50ページを巡回した推測値です」と必ず記載せよ [cite: 97, 152]。
 
-            【STEP 4：提言レポート】 [cite: 111]
-            導入文：「これまでの調査・診断に基づき、以下の改善提言を行います。」 [cite: 112]
-            1. サマリー [cite: 113]
-               - 1. 診断結果のまとめ（阻害要因） [cite: 114]
-               - 2. 提案の骨子（問い合わせ最大化方針を文章で） [cite: 115]
-            2. 優先度別提言（最優先/優先/次の課題） [cite: 116, 117, 122, 125]
-               各提言に必ず「（最初の一歩）」を入れ、具体的タスクを明示 [cite: 118, 123, 126]。解析キーワードを引用せよ。
-            3. 受注率を高める新コンテンツ案 3案 [cite: 128, 129, 130, 131]
+            【STEP 3：診断レポート】
+            以下の3つの見出しで構成し、各小見出しの下は「3つのブロック（改行）」で記述せよ。
+            1. EEAT診断（経験・専門性 / 権威性 / 信頼性）
+            2. SEO / LLMO診断（構造の明快さ / 情報の網羅性とリンク構造 / キーワードの接点と継続性）
+            3. その他（可読性・情報の鮮度）
+            
+            記述ルール：
+            ・第1段：事実と解釈。数値を自然に組み込み、0や低数値は「AIや検索エンジンが見つけにくい状態」と明記せよ。
+            ・第2段：(リスク・要チェック)
+            ・第3段：影響。ユーザーがどう迷い問い合わせず離脱するか。
 
-            自社:{get_stat_text(st.session_state.my_data)} / 競合A:{get_stat_text(st.session_state.c1_data)} / 競合B:{c2_info}
+            【STEP 4：提言レポート】
+            導入文：「これまでの調査・診断に基づき、以下の改善提言を行います。」のみ [cite: 43, 112, 200]。
+            1. サマリー
+               - 1. 診断結果のまとめ：数値差が招いている最大の構造的弱点を整理 [cite: 45, 114]。
+               - 2. 提案の骨子：問い合わせ最大化方針を文章で記述 [cite: 50, 115]。
+            2. 優先度別提言（最優先/優先/次の課題）
+               各提言に必ず「（最初の一歩）」を入れ、具体的タスクを明示 [cite: 58, 61, 64, 118, 121]。解析キーワードを引用せよ。
+            3. 新コンテンツ３案
+               タイトルと概要のみ。目的などの項目は削除せよ。
+
+            自社データ: {get_stat_text(st.session_state.my_data)}
+            競合Aデータ: {get_stat_text(st.session_state.c1_data)}
+            競合Bデータ: {c2_info}
             """
             st.session_state.full_report = model.generate_content(prompt_main).text
             st.session_state.step = 3
 
     if 'full_report' in st.session_state:
-        # 表がスクロールしないよう、CSSでテーブル幅を調整
+        # 表がスクロールしないようにCSSを適用
         st.markdown("<style>table {width: 100% !important; display: table !important; table-layout: fixed !important;} td, th {word-wrap: break-word !important; white-space: normal !important;}</style>", unsafe_allow_html=True)
         st.markdown(st.session_state.full_report)
