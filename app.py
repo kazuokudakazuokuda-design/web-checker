@@ -8,28 +8,25 @@ import time
 # --- 1. 基本設定・看板表示 ---
 st.set_page_config(page_title="🛡️ Web構造比較診断", layout="wide")
 
-# CSSによるデザイン調整（見出しサイズの大幅アップと表の固定）
+# CSS: 見出しサイズと余白の徹底調整
 st.markdown("""
     <style>
-    /* STEP見出し（H2）を極太・巨大にする */
     h2 { 
-        font-size: 3.0em !important; 
+        font-size: 3.5em !important; 
         font-weight: 800 !important; 
         color: #1E1E1E !important;
-        border-left: 12px solid #1f77b4;
-        padding-left: 15px;
-        margin-top: 2em !important;
-        margin-bottom: 1em !important;
+        border-left: 15px solid #1f77b4;
+        padding-left: 20px;
+        margin-top: 2.5em !important;
+        margin-bottom: 1.5em !important;
         line-height: 1.2 !important;
     }
-    /* 小見出し（H3）の調整 */
     h3 { 
-        font-size: 1.8em !important; 
+        font-size: 2.0em !important; 
         font-weight: bold !important; 
-        margin-top: 1.5em !important; 
+        margin-top: 2.0em !important; 
         color: #2c3e50;
     }
-    /* テーブルがスクロールしないように横幅を固定 */
     table { 
         width: 100% !important; 
         table-layout: fixed !important; 
@@ -38,18 +35,21 @@ st.markdown("""
     td, th { 
         word-wrap: break-word !important; 
         white-space: normal !important; 
-        font-size: 1.0em !important; 
-        padding: 10px !important;
+        font-size: 1.1em !important; 
+        padding: 12px !important;
         border: 1px solid #ddd !important;
     }
-    th { background-color: #f2f2f2 !important; }
+    th { background-color: #f8f9fa !important; }
     </style>
 """, unsafe_allow_html=True)
 
+# 看板部分：指示通りの改行と文言
 st.markdown("""
 # 🛡️ Web構造比較診断
+
 **【概要】** 本ツールは、自社と競合のWebサイトを「物理構造」と「コンテンツ内容」の両面から比較し、4つのステップで実務的な改善案を抽出します。
-**【免責事項】** 本診断は生成AIによる診断です。推測、不正確な情報を含む可能性がありますので、一次診断用として参考に使用ください。
+
+本診断は生成AIによる診断です。推測、不正確な情報を含む可能性がありますので、一次診断用として参考に使用ください。
 """)
 
 if 'step' not in st.session_state:
@@ -62,12 +62,11 @@ except Exception as e:
     st.error(f"初期設定エラー: {e}")
     st.stop()
 
-# --- 2. 物理構造解析関数 ---
+# --- 2. 解析関数 ---
 def analyze_site_physics(url, limit_pages=40):
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36"}
     url = url.strip()
     if not url.startswith("http"): url = "https://" + url
-    
     try:
         r = requests.get(url, headers=headers, timeout=15)
         r.raise_for_status()
@@ -98,7 +97,7 @@ def analyze_site_physics(url, limit_pages=40):
         "body_preview": soup.get_text()[:1500] 
     }
 
-# --- 3. メインUI ---
+# --- 3. UI部 ---
 col_u1, col_u2, col_u3 = st.columns(3)
 with col_u1: my_url = st.text_input("自社URL", key="my_url_in", placeholder="https://example.com")
 with col_u2: comp1_url = st.text_input("競合A", key="c1_url_in", placeholder="https://comp-a.com")
@@ -114,7 +113,7 @@ if st.button("STEP 1：業界を判定"):
             st.session_state.c2_data = analyze_site_physics(comp2_url) if comp2_url else None
             
             if "error" in st.session_state.my_data or "error" in st.session_state.c1_data:
-                st.error("解析エラーが発生しました。URLを確認してください。")
+                st.error("解析エラー。URLを確認してください。")
             else:
                 p1 = f"業界名を単語1つで回答せよ。タイトル:{st.session_state.my_data['title']} 内容:{st.session_state.my_data['desc']}"
                 st.session_state.industry = model.generate_content(p1).text.strip()
@@ -139,18 +138,25 @@ if st.session_state.step >= 2:
             c2_info = format_data(st.session_state.c2_data) if st.session_state.c2_data else "なし"
             
             prompt_main = f"""
-            解析結果からレポートを作成してください。挨拶や導入文は不要です。
+            解析結果からレポートを作成せよ。挨拶や前置きは一切不要。
             
+            重要ルール：
+            各見出し（##や###）、各項目（■項目名）、および各段落の間には必ず【空行（1行分の空白）】を挿入せよ。文字を絶対に詰めないこと。
+
             ## 【STEP 2：調査レポート】
-            Markdownで比較表を作成せよ（会社名を行、項目を列に）。
+
+            Markdownで比較表を作成（会社名を行、項目を列に）。
             項目：サイトタイトル, H1数, H2数, 内部リンク, 事例数, ブログ数, 最終更新日
-            ※最終更新日はプレビューから推測（202X/XX/XX形式）。不明なら不明とせよ。
-            ※表の下に「※数値はサイト内30〜50ページを巡回した推測値です」と必ず記載せよ。
+            ※最終更新日はプレビューから推測せよ。不明なら不明で良い。
+
+            ※表の直後には必ず【空行】を入れ、「※数値はサイト内30〜50ページを巡回した推測値です」と必ず記載せよ。
 
             ## 【STEP 3：診断レポート】
-            以下の3つのカテゴリ（###）で構成し、その中で必ず指定の小見出し（■項目名）をすべて立てて記述せよ。
-            各小見出しの下は「3つのブロック（改行）」で構成すること。
-            ※解析上の日付の不備（未来日など）については、AI側の誤検知の可能性があるため、一切指摘を禁止する。
+
+            以下の大項目（##）の中に、必ず指定の小見出し（### ■項目名）をすべて立てて記述せよ。
+            各小見出しの直後、および各ブロック（第1段〜第3段）の間には必ず【空行】を挟め。
+            
+            ※「日付が未来である」等の不確かな指摘はAI側の誤検知リスクがあるため、一切禁止する。
             
             1. EEAT診断
                ### ■経験・専門性
@@ -163,24 +169,27 @@ if st.session_state.step >= 2:
             3. その他
                ### ■可読性とコンテンツ量
             
-            記述ルール：
-            ・第1段：事実と解釈。数値を自然に組み込み、0や低数値は「AIや検索エンジンが見つけにくい状態」と明記せよ。
-            ・第2段：(リスク・要チェック) ※独自の警告フレーズを1行で。
+            各項目の記述ルール：
+            ・第1段：事実と解釈。数値を自然に組み込み、0や低数値は「AIや検索エンジンが見つけにくい状態」と明記。
+            ・第2段：(リスク・要チェック) 
             ・第3段：影響。ユーザーがどう迷い問い合わせず離脱するか。
 
             ## 【STEP 4：提言レポート】
+
             導入文：「これまでの調査・診断に基づき、以下の改善提言を行います。」のみ。
             
             1. サマリー
                - 1. 診断結果のまとめ（阻害要因を動的に整理）
                - 2. 提案の骨子（問い合わせ最大化方針を文章で記述）
+               ※各箇条書きの間には【空行】を入れよ。
             
             2. 優先度別提言（最優先/優先/次の課題）
-               ※スペック表の数値差を比較し、自社が最も劣っている、または改善インパクトが最大と思われる項目をAIが動的に選別して優先順位をつけよ。
-               各項目に必ず「（最初の一歩）」を含め、具体的タスクを提示せよ。
+               ※スペック表の数値差を比較し、AIが動的に選別して優先順位をつけよ。
+               【記述ルール】：見出し（【最優先】等）の直後、説明文の直後、（最初の一歩）の直前には、必ず【空行】を挿入せよ。
             
             3. 新コンテンツ３案
-               「タイトル」と「詳細な構成・内容」を提示せよ（目的などの重複項目は削除）。
+               「タイトル」と、制作に役立つ「詳細な構成・内容」を提示せよ。
+               ※タイトルと構成・内容の間には必ず【空行】を入れよ。
 
             自社データ: {format_data(st.session_state.my_data)}
             競合Aデータ: {format_data(st.session_state.c1_data)}
