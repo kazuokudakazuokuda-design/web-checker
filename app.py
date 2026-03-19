@@ -12,19 +12,19 @@ st.set_page_config(page_title="🛡️ Web構造比較診断", layout="wide")
 st.markdown("""
     <style>
     h2 { 
-        font-size: 3.5em !important; 
+        font-size: 2.2em !important; 
         font-weight: 800 !important; 
         color: #1E1E1E !important;
         border-left: 15px solid #1f77b4;
         padding-left: 20px;
-        margin-top: 2.5em !important;
-        margin-bottom: 1.5em !important;
+        margin-top: 1.5em !important;
+        margin-bottom: 1.0em !important;
         line-height: 1.2 !important;
     }
     h3 { 
-        font-size: 2.0em !important; 
+        font-size: 1.5em !important; 
         font-weight: bold !important; 
-        margin-top: 2.0em !important; 
+        margin-top: 1.2em !important; 
         color: #2c3e50;
     }
     table { 
@@ -112,9 +112,13 @@ if st.button("STEP 1：業界を判定"):
             st.session_state.c1_data = analyze_site_physics(comp1_url)
             st.session_state.c2_data = analyze_site_physics(comp2_url) if comp2_url else None
             
-            if "error" in st.session_state.my_data or "error" in st.session_state.c1_data:
-                st.error("解析エラー。URLを確認してください。")
-            else:
+            error_found = False
+            for data, url in [(st.session_state.my_data, my_url), (st.session_state.c1_data, comp1_url), (st.session_state.c2_data, comp2_url)]:
+                if data and "error" in data:
+                    st.error(f"URL：{url} は現在読み込めません。サイト側のセキュリティ対策（WAF等）により、自動解析がブロックされている可能性があります。URLが正しいか確認するか、別の競合サイトでお試しください。")
+                    error_found = True
+            
+            if not error_found:
                 p1 = f"業界名を単語1つで回答せよ。タイトル:{st.session_state.my_data['title']} 内容:{st.session_state.my_data['desc']}"
                 st.session_state.industry = model.generate_content(p1).text.strip()
                 st.session_state.step = 2
@@ -141,7 +145,8 @@ if st.session_state.step >= 2:
             解析結果からレポートを作成せよ。挨拶や前置きは一切不要。
             
             重要ルール：
-            各見出し（##や###）、各項目（■項目名）、および各段落の間には必ず【空行（1行分の空白）】を挿入せよ。文字を絶対に詰めないこと。
+            ・メタディスクリプションの要約・改変禁止：取得したデータは原文のまま表示・分析に使用し、一字一句変えずに扱うこと。
+            ・各見出し（##や###）、各項目（■項目名）、および各段落の間には必ず【空行（1行分の空白）】を挿入せよ。文字を絶対に詰めないこと。
 
             ## 【STEP 2：調査レポート】
 
@@ -188,7 +193,7 @@ if st.session_state.step >= 2:
                【記述ルール】：見出し（【最優先】等）の直後、説明文の直後、（最初の一歩）の直前には、必ず【空行】を挿入せよ。
             
             3. 新コンテンツ３案
-               「タイトル」と、制作に役立つ「詳細な構成・内容」を提示せよ。
+               「タイトル」と、制作に役立つ「詳細な構成・内容」のみを提示せよ。
                ※タイトルと構成・内容の間には必ず【空行】を入れよ。
 
             自社データ: {format_data(st.session_state.my_data)}
