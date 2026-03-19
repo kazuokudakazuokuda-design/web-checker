@@ -9,13 +9,14 @@ st.set_page_config(page_title="🛡️ Web構造比較診断", layout="wide")
 
 try:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+    # 2026年現在、コスト・速度・精度のバランスが最も優れた Gemini 2.5 Flash を採用
     model = genai.GenerativeModel('gemini-2.5-flash')
 except:
-    st.error("Secretsに GEMINI_API_KEY を設定してください。")
+    st.error("Secretsに 'GEMINI_API_KEY' が設定されていません。")
     st.stop()
 
 # --- 2. 物理構造・統計データ解析関数 ---
-def analyze_site_physics(url, limit_pages=30):
+def analyze_site_physics(url, limit_pages=50):
     try:
         url = url.strip()
         if not url.startswith("http"): url = "https://" + url
@@ -38,7 +39,7 @@ def analyze_site_physics(url, limit_pages=30):
             has_sitemap = "なし"
 
         asset_counts = {"事例": 0, "ブログ": 0, "料金": 0, "会社情報": 0, "問い合わせ": 0}
-        for link in internal_links[:limit_pages]:
+        for link in list(set(internal_links))[:limit_pages]:
             l_lower = link.lower()
             if any(x in l_lower for x in ["case", "jirei", "works"]): asset_counts["事例"] += 1
             if any(x in l_lower for x in ["blog", "column", "news"]): asset_counts["ブログ"] += 1
@@ -59,36 +60,48 @@ def analyze_site_physics(url, limit_pages=30):
         return f"Error: {str(e)}"
 
 # --- 3. UI・ロジック ---
-st.title("🛡️ Web構造比較診断")
+st.title("🛡️ 経営戦略型・Web構造比較診断")
 
 # URL入力
 col_u1, col_u2, col_u3 = st.columns(3)
-with col_u1: my_url = st.text_input("自社URL", key="my_url_input")
-with col_u2: comp1_url = st.text_input("競合A", key="c1_url_input")
-with col_u3: comp2_url = st.text_input("競合B", key="c2_url_input")
+with col_u1: my_url = st.text_input("自社URL")
+with col_u2: comp1_url = st.text_input("競合A")
+with col_u3: comp2_url = st.text_input("競合B")
 
-# セッション状態の初期化
+# 導入文と注意喚起
+st.markdown("""
+**【概要】** 本ツールは、自社と競合のWebサイトを「物理構造」と「コンテンツ内容」の両面から比較し、4つのステップで実務的な改善案を抽出します。  
+**【注意】** <span style="color: #ff4b4b;">※本診断は生成AIによる推測を含む一次診断用です。内容の正確性を保証するものではありません。</span>
+""", unsafe_allow_html=True)
+
 if 'step' not in st.session_state: st.session_state.step = 1
 
 # --- STEP 1：業界判定 ---
 if st.button("STEP 1：業界を判定"):
-    with st.spinner("メタデータ解析中..."):
-        st.session_state.my_data = analyze_site_physics(my_url)
-        st.session_state.c1_data = analyze_site_physics(comp1_url)
-        st.session_state.c2_data = analyze_site_physics(comp2_url) if comp2_url else None
-        
-        prompt_s1 = f"URLおよびメタディスクリプションから業界名を1語で特定せよ。\n自社Meta: {st.session_state.my_data['desc']}\n競合AMeta: {st.session_state.c1_data['desc']}"
-        st.session_state.industry = model.generate_content(prompt_s1).text.strip()
-        st.session_state.step = 2
+    if not my_url or not comp1_url:
+        st.warning("自社URLと競合AのURLを入力してください。")
+    else:
+        with st.spinner("メタデータ解析中..."):
+            st.session_state.my_data = analyze_site_physics(my_url)
+            st.session_state.c1_data = analyze_site_physics(comp1_url)
+            st.session_state.c2_data = analyze_site_physics(comp2_url) if comp2_url else None
+            
+            prompt_s1 = f"URLおよびメタディスクリプションから業界名を1語で特定せよ。\n自社Meta: {st.session_state.my_data['desc']}\n競合AMeta: {st.session_state.c1_data['desc']}"
+            st.session_state.industry = model.generate_content(prompt_s1).text.strip()
+            st.session_state.step = 2
 
-# STEP 1の結果表示（ステップが進んでも維持）
+# STEP 1の結果表示
 if st.session_state.step >= 2:
     st.divider()
-    st.info(f"特定された業界: **{st.session_state.industry}**")
-    with st.expander("STEP 1：メタデータ根拠（確認用）", expanded=True):
-        st.write(f"- 自社Meta: {st.session_state.my_data['desc']}")
-        st.write(f"- 競合AMeta: {st.session_state.c1_data['desc']}")
-        if st.session_state.c2_data: st.write(f"- 競合BMeta: {st.session_state.c2_data['desc']}")
+    st.subheader("STEP 1：業界の特定")
+    # 業界名の修正を可能に
+    st.session_state.industry = st.text_input("特定された業界名（誤認識がある場合は修正してください）", st.session_state.industry)
+    st.write("業界は読み違えたり、大きくまたは小さくとらえることがあるので、適宜修正たのみます。")
+
+    with st.expander("STEP 1：メタデータ根拠（確認用）"):
+        st.write(f"• 自社Meta: {st.session_state.my_data['desc']}")
+        st.write(f"• 競合AMeta: {st.session_state.c1_data['desc']}")
+        if st.session_state.c2_data: st.write(f"• 競合BMeta: {st.session_state.c2_data['desc']}")
 
     # --- STEP 2：調査レポート ---
     if st.button("STEP 2：調査レポートを生成"):
@@ -112,8 +125,9 @@ if st.session_state.step >= 2:
             st.session_state.step = 3
 
     if 'report_s2' in st.session_state:
-        st.markdown(st.session_state.report_s2)
-        st.markdown("<small>※資産構成（推測値）: 最大30〜50ページの巡回範囲内でのページ種別ごとのカウント結果です。</small>", unsafe_allow_html=True)
+        # スペック表見出しの下に注釈を入れる（HTML使用）
+        report_display = st.session_state.report_s2.replace("スペック比較表", "スペック比較表  \n<small>※本表はサイト内30〜50ページの巡回に基づく推測値です。</small>")
+        st.markdown(report_display, unsafe_allow_html=True)
 
     # --- STEP 3：診断レポート ---
     if st.session_state.step >= 3:
@@ -154,3 +168,5 @@ if st.session_state.step >= 2:
                 
         if 'report_s4' in st.session_state:
             st.markdown(st.session_state.report_s4)
+            st.divider()
+            st.info("⚠️ 注意：本診断は生成AIによる一次診断です。実務への適用にあたっては必ず専門家によるダブルチェックを行ってください。")
