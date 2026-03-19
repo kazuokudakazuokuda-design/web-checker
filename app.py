@@ -8,7 +8,44 @@ import time
 # --- 1. 基本設定・看板表示 ---
 st.set_page_config(page_title="🛡️ Web構造比較診断", layout="wide")
 
-# 概要・免責事項の表示
+# CSSによるデザイン調整（見出しサイズの大幅アップと表の固定）
+st.markdown("""
+    <style>
+    /* STEP見出し（H2）を極太・巨大にする */
+    h2 { 
+        font-size: 3.0em !important; 
+        font-weight: 800 !important; 
+        color: #1E1E1E !important;
+        border-left: 12px solid #1f77b4;
+        padding-left: 15px;
+        margin-top: 2em !important;
+        margin-bottom: 1em !important;
+        line-height: 1.2 !important;
+    }
+    /* 小見出し（H3）の調整 */
+    h3 { 
+        font-size: 1.8em !important; 
+        font-weight: bold !important; 
+        margin-top: 1.5em !important; 
+        color: #2c3e50;
+    }
+    /* テーブルがスクロールしないように横幅を固定 */
+    table { 
+        width: 100% !important; 
+        table-layout: fixed !important; 
+        border-collapse: collapse !important;
+    }
+    td, th { 
+        word-wrap: break-word !important; 
+        white-space: normal !important; 
+        font-size: 1.0em !important; 
+        padding: 10px !important;
+        border: 1px solid #ddd !important;
+    }
+    th { background-color: #f2f2f2 !important; }
+    </style>
+""", unsafe_allow_html=True)
+
 st.markdown("""
 # 🛡️ Web構造比較診断
 **【概要】** 本ツールは、自社と競合のWebサイトを「物理構造」と「コンテンツ内容」の両面から比較し、4つのステップで実務的な改善案を抽出します。
@@ -20,7 +57,6 @@ if 'step' not in st.session_state:
 
 try:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-    # 最新の Gemini 2.5 Flash モデルを指定
     model = genai.GenerativeModel('models/gemini-2.5-flash')
 except Exception as e:
     st.error(f"初期設定エラー: {e}")
@@ -47,7 +83,6 @@ def analyze_site_physics(url, limit_pages=40):
     domain = urlparse(url).netloc
     internal_links = [urljoin(url, l['href']) for l in all_links if domain in urljoin(url, l['href'])]
     
-    # 資産カウントの定義
     asset_counts = {"事例": 0, "ブログ": 0}
     for link in list(set(internal_links))[:limit_pages]:
         l_lower = link.lower()
@@ -69,7 +104,6 @@ with col_u1: my_url = st.text_input("自社URL", key="my_url_in", placeholder="h
 with col_u2: comp1_url = st.text_input("競合A", key="c1_url_in", placeholder="https://comp-a.com")
 with col_u3: comp2_url = st.text_input("競合B (任意)", key="c2_url_in", placeholder="https://comp-b.com")
 
-# STEP 1: 業界判定
 if st.button("STEP 1：業界を判定"):
     if not my_url or not comp1_url:
         st.warning("自社と競合AのURLを入力してください。")
@@ -88,10 +122,8 @@ if st.button("STEP 1：業界を判定"):
 
 if st.session_state.step >= 2:
     st.divider()
-    # 業界修正機能
-    st.session_state.industry = st.text_input("業界名（修正が必要な場合は書き換えてください）", st.session_state.industry)
+    st.session_state.industry = st.text_input("業界名", st.session_state.industry)
     
-    # メタディスクリプション表示
     st.write("**トップページのメタディスクリプション**")
     st.write(f"・自社：{st.session_state.my_data['desc']}")
     st.write(f"・競合A：{st.session_state.c1_data['desc']}")
@@ -107,36 +139,48 @@ if st.session_state.step >= 2:
             c2_info = format_data(st.session_state.c2_data) if st.session_state.c2_data else "なし"
             
             prompt_main = f"""
-            以下の解析結果からレポートを作成してください。挨拶や導入文は一切不要です。
+            解析結果からレポートを作成してください。挨拶や導入文は不要です。
             
-            【STEP 2：調査レポート】
-            Markdownで1つの比較表を作成せよ。会社名を縦軸（行）、項目を横軸（列）に配置すること。
+            ## 【STEP 2：調査レポート】
+            Markdownで比較表を作成せよ（会社名を行、項目を列に）。
             項目：サイトタイトル, H1数, H2数, 内部リンク, 事例数, ブログ数, 最終更新日
-            ※最終更新日はプレビュー内容から推測して「202X/XX/XX」形式で記述。不明なら「不明」。
-            ※表が横スクロールしないよう、Markdownの記述を簡潔にせよ。
-            表の直下に「※数値はサイト内30〜50ページを巡回した推測値です」と必ず記載せよ。
+            ※最終更新日はプレビューから推測（202X/XX/XX形式）。不明なら不明とせよ。
+            ※表の下に「※数値はサイト内30〜50ページを巡回した推測値です」と必ず記載せよ。
 
-            【STEP 3：診断レポート】
-            以下の3つの見出し（##）で構成し、各小見出し（###）の下は「3つのブロック（改行）」で記述せよ。
-            1. EEAT診断（経験・専門性 / 権威性 / 信頼性）
-            2. SEO / LLMO診断（構造の明快さ / 情報の網羅性とリンク構造 / キーワードの接点と継続性）
-            3. その他（可読性・情報の鮮度）
+            ## 【STEP 3：診断レポート】
+            以下の3つのカテゴリ（###）で構成し、その中で必ず指定の小見出し（■項目名）をすべて立てて記述せよ。
+            各小見出しの下は「3つのブロック（改行）」で構成すること。
+            ※解析上の日付の不備（未来日など）については、AI側の誤検知の可能性があるため、一切指摘を禁止する。
+            
+            1. EEAT診断
+               ### ■経験・専門性
+               ### ■権威性
+               ### ■信頼性
+            2. SEO / LLMO診断
+               ### ■構造の明快さ
+               ### ■情報の網羅性とリンク構造
+               ### ■キーワードの接点と継続性
+            3. その他
+               ### ■可読性とコンテンツ量
             
             記述ルール：
-            ・第1段：事実と解釈を統合した文章。数値を自然に組み込み、0や低数値は「AIや検索エンジンが見つけにくい状態」と明記せよ。
-            ・第2段：(リスク・要チェック)
+            ・第1段：事実と解釈。数値を自然に組み込み、0や低数値は「AIや検索エンジンが見つけにくい状態」と明記せよ。
+            ・第2段：(リスク・要チェック) ※独自の警告フレーズを1行で。
             ・第3段：影響。ユーザーがどう迷い問い合わせず離脱するか。
 
-            【STEP 4：提言レポート】
+            ## 【STEP 4：提言レポート】
             導入文：「これまでの調査・診断に基づき、以下の改善提言を行います。」のみ。
-            見出しサイズ（##）はSTEP2、3と同じにせよ。
+            
             1. サマリー
-               - 1. 診断結果のまとめ：数値差が招いている最大の構造的弱点を整理。
-               - 2. 提案の骨子：戦略核を文章で記述せよ。
+               - 1. 診断結果のまとめ（阻害要因を動的に整理）
+               - 2. 提案の骨子（問い合わせ最大化方針を文章で記述）
+            
             2. 優先度別提言（最優先/優先/次の課題）
-               各提言に必ず「（最初の一歩）」を入れ、具体的タスクを明示。解析キーワードを引用せよ。
+               ※スペック表の数値差を比較し、自社が最も劣っている、または改善インパクトが最大と思われる項目をAIが動的に選別して優先順位をつけよ。
+               各項目に必ず「（最初の一歩）」を含め、具体的タスクを提示せよ。
+            
             3. 新コンテンツ３案
-               タイトルと詳細な概要のみ。目的などの重複項目は削除せよ。
+               「タイトル」と「詳細な構成・内容」を提示せよ（目的などの重複項目は削除）。
 
             自社データ: {format_data(st.session_state.my_data)}
             競合Aデータ: {format_data(st.session_state.c1_data)}
@@ -146,14 +190,4 @@ if st.session_state.step >= 2:
             st.session_state.step = 3
 
     if 'full_report' in st.session_state:
-        # テーブル幅固定とフォントサイズ調整のCSS
-        st.markdown("""
-            <style>
-            table {width: 100% !important; display: table !important; table-layout: fixed !important;}
-            td, th {word-wrap: break-word !important; white-space: normal !important; font-size: 0.95em;}
-            h1 { font-size: 2.2em !important; }
-            h2 { font-size: 1.8em !important; margin-top: 1.5em !important; }
-            h3 { font-size: 1.4em !important; margin-top: 1.2em !important; }
-            </style>
-        """, unsafe_allow_html=True)
         st.markdown(st.session_state.full_report)
