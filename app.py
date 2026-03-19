@@ -1,137 +1,156 @@
 import streamlit as st
 import requests
 from bs4 import BeautifulSoup
-from openai import OpenAI
-import streamlit.components.v1 as components
-import re
+import google.generativeai as genai
+from urllib.parse import urlparse, urljoin
 
-# 1. 画面構成
-st.set_page_config(page_title="🛡️ 戦略Web診断：構造と実務", layout="wide")
-st.title("🛡️ 経営戦略型・Web構造比較診断")
-st.caption("※物理数値の格差から、サイトの『構造的欠陥』を特定し、現場への具体的命令を生成します。")
+# --- 1. 基本設定（Gemini 2.5 Flash） ---
+st.set_page_config(page_title="🛡️ Web構造比較診断", layout="wide")
 
-# --- 解析設定 ---
-st.divider()
-st.subheader("🔍 解析対象の設定")
-col_u1, col_u2, col_u3 = st.columns(3)
-
-with col_u1:
-    my_url = st.text_input("自社URL", placeholder="https://example.com")
-with col_u2:
-    comp1_url = st.text_input("競合A", placeholder="https://competitor-a.com")
-with col_u3:
-    comp2_url = st.text_input("競合B（任意）", placeholder="https://competitor-b.com")
-
-# API設定
 try:
-    api_key = st.secrets["OPENAI_API_KEY"].strip().strip('"')
-    client = OpenAI(api_key=api_key)
+    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+    # 爆速・低コストの 2.5 Flash を採用
+    model = genai.GenerativeModel('gemini-2.5-flash')
 except:
-    st.error("APIキーの設定を確認してください。")
+    st.error("StreamlitのSecretsに GEMINI_API_KEY を設定してください。")
     st.stop()
 
-def get_site_metrics(url):
+# --- 2. 物理構造・統計データ解析関数 ---
+def analyze_site_physics(url, limit_pages=30):
     try:
         url = url.strip()
         if not url.startswith("http"): url = "https://" + url
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36"}
+        
         r = requests.get(url, headers=headers, timeout=15)
         r.encoding = r.apparent_encoding
         soup = BeautifulSoup(r.text, "html.parser")
-        
-        for s in soup(['script', 'style', 'nav', 'footer', 'header', 'aside']):
-            s.decompose()
 
-        links = soup.find_all('a', href=True)
-        domain = url.split("//")[-1].split("/")[0]
-        internal_links = [l for l in links if domain in l['href'] or l['href'].startswith('/')]
-        unique_internal_links = len(set([l['href'] for l in internal_links]))
+        m_desc = soup.find("meta", attrs={"name": "description"})
+        h1_count = len(soup.find_all('h1'))
+        h2_count = len(soup.find_all('h2'))
+        all_links = soup.find_all('a', href=True)
+        domain = urlparse(url).netloc
+        internal_links = [urljoin(url, l['href']) for l in all_links if domain in urljoin(url, l['href'])]
         
-        h_tags = soup.find_all(['h1', 'h2', 'h3', 'h4'])
-        p_tags = soup.find_all('p')
-        img_tags = soup.find_all('img')
-        alt_missing = len([img for img in img_tags if not img.get('alt') or img.get('alt').strip() == ""])
-        
-        text_content = soup.get_text()
-        total_chars = len(text_content.strip())
-        avg_p_len = int(total_chars / len(p_tags)) if len(p_tags) > 0 else 0
-        
-        nums = len(re.findall(r'\d+', text_content))
-        metrics = {
-            "unique_links": unique_internal_links, "h_count": len(h_tags), "a_count": len(links),
-            "img_count": len(img_tags), "alt_missing": alt_missing, "avg_p_len": avg_p_len,
-            "num_count": nums, "text": text_content[:8000] 
+        sitemap_url = urljoin(url, "/sitemap.xml")
+        try:
+            has_sitemap = "あり" if requests.head(sitemap_url, timeout=5).status_code == 200 else "なし"
+        except:
+            has_sitemap = "なし"
+
+        asset_counts = {"事例": 0, "ブログ": 0, "料金": 0, "会社情報": 0, "問い合わせ": 0}
+        for link in internal_links[:limit_pages]:
+            l_lower = link.lower()
+            if any(x in l_lower for x in ["case", "jirei", "works"]): asset_counts["事例"] += 1
+            if any(x in l_lower for x in ["blog", "column", "news"]): asset_counts["ブログ"] += 1
+            if any(x in l_lower for x in ["price", "fee", "hiyo"]): asset_counts["料金"] += 1
+            if any(x in l_lower for x in ["about", "company", "office", "access"]): asset_counts["会社情報"] += 1
+            if any(x in l_lower for x in ["contact", "inquiry", "entry"]): asset_counts["問い合わせ"] += 1
+
+        return {
+            "title": soup.title.string if soup.title else "No Title",
+            "desc": m_desc["content"] if m_desc else "未設定",
+            "h1": h1_count, "h2": h2_count, "total_links": len(all_links),
+            "internal_links_count": len(internal_links),
+            "sitemap": has_sitemap,
+            "asset_counts": asset_counts,
+            "body_text": soup.get_text()[:1500]
         }
-        return metrics
-    except:
-        return None
+    except Exception as e:
+        return f"Error: {str(e)}"
 
-def copy_to_clipboard_js(text):
-    escaped_text = text.replace("\\", "\\\\").replace("`", "\\`").replace("$", "\\$")
-    js_code = f"""
-    <script>
-    function copyText() {{
-        const text = `{escaped_text}`;
-        navigator.clipboard.writeText(text).then(() => {{ alert("レポートをコピーしました！"); }});
-    }}
-    </script>
-    <button onclick="copyText()" style="
-        background-color: #4CAF50; color: white; border: none; padding: 12px 24px;
-        border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%; margin-bottom: 20px;
-    ">📋 レポートをコピーする</button>
-    """
-    return components.html(js_code, height=70)
+# --- 3. UI構成 ---
+st.title("🛡️ Web構造比較診断")
 
-if 'step' not in st.session_state:
-    st.session_state.step = 1
-    st.session_state.industry = ""
+col_u1, col_u2, col_u3 = st.columns(3)
+with col_u1: my_url = st.text_input("自社URL")
+with col_u2: comp1_url = st.text_input("競合A")
+with col_u3: comp2_url = st.text_input("競合B")
 
-if st.button("STEP 1: 業界を解析"):
+if 'step' not in st.session_state: st.session_state.step = 1
+
+# --- STEP 1：業界判定 ---
+if st.button("STEP 1：業界を判定") or st.session_state.step > 1:
     if not my_url or not comp1_url:
-        st.error("URLを正しく入力してください。")
+        st.error("URLを入力してください。")
     else:
-        with st.spinner("診断中"):
-            st.session_state.my_m = get_site_metrics(my_url)
-            st.session_state.c1_m = get_site_metrics(comp1_url)
-            st.session_state.c2_m = get_site_metrics(comp2_url) if comp2_url else None
+        with st.spinner("メタデータ解析中..."):
+            if 'my_data' not in st.session_state:
+                st.session_state.my_data = analyze_site_physics(my_url)
+                st.session_state.c1_data = analyze_site_physics(comp1_url)
+                st.session_state.c2_data = analyze_site_physics(comp2_url) if comp2_url else None
             
-            if st.session_state.my_m and st.session_state.c1_m:
-                ind_prompt = f"業界名のみを1語で回答せよ。\n\nテキスト:{st.session_state.my_m['text'][:2000]}"
-                response = client.chat.completions.create(model="gpt-4o", messages=[{"role": "user", "content": ind_prompt}], temperature=0.0)
-                st.session_state.industry = response.choices[0].message.content
-                st.session_state.step = 2
+            prompt_s1 = f"URLおよびメタディスクリプションから業界名を1語で特定せよ。\n自社Meta: {st.session_state.my_data['desc']}\n競合AMeta: {st.session_state.c1_data['desc']}"
+            st.session_state.industry = model.generate_content(prompt_s1).text.strip()
+            
+            st.info(f"特定された業界: {st.session_state.industry}")
+            st.markdown("**【追加】トップページのメタディスクリプション**")
+            st.write(f"- 自社: {st.session_state.my_data['desc']}")
+            st.write(f"- 競合A: {st.session_state.c1_data['desc']}")
+            if st.session_state.c2_data: st.write(f"- 競合B: {st.session_state.c2_data['desc']}")
+            st.session_state.step = 2
 
+# --- STEP 2：調査レポート ---
 if st.session_state.step >= 2:
-    st.divider()
-    industry_input = st.text_input("解析業界ベース", value=st.session_state.industry)
-    
-    if st.button("STEP 2: 実務命令レポートを生成"):
-        st.session_state.industry = industry_input
-        with st.spinner("診断中"):
-            def fmt_m(m):
-                if not m: return "なし"
-                return f"ページ:{m['unique_links']}, 見出し:{m['h_count']}, リンク:{m['a_count']}, 画像:{m['img_count']}(Alt欠:{m['alt_missing']}), 段落:{m['avg_p_len']}字, 数値出現:{m['num_count']}"
-            m_data = f"自社: {fmt_m(st.session_state.my_m)}\n競合A: {fmt_m(st.session_state.c1_m)}\n"
-            if st.session_state.c2_m: m_data += f"競合B: {fmt_m(st.session_state.c2_m)}\n"
-
-            sys_msg = (
-                f"あなたは{st.session_state.industry}業界のWebコンサルタントです。丁寧な『ですます調』でレポートを作成してください。\n\n"
-                "【出力の絶対ルール：示唆の品質強化】\n"
-                "1. **冒頭の『物理構造スペック比較』は必ずMarkdownの表形式（Table）で作成せよ。**\n"
-                "2. 各診断項目は必ず『事実：』と『示唆：』に分離せよ。中途半端な記述は厳禁。\n"
-                "3. **『示唆：』の記述（最重要）**：\n"
-                "   - 抽象的なアドバイス（「〜しましょう」等）を禁止します。数値格差が招く「実務上の損失」を具体的に定義してください。\n"
-                "   - 示唆は長く、重厚に記述してください。数値の不足が「顧客の検討プロセスのどこを止めているか」を業界心理に基づき論理的に説いてください。\n"
-                "   - 提案レベルを最大化してください。例えば「見出しを増やす」だけでなく「[〇〇ページ]に『△△（具体的な実務用語）』を見出しとして追加し、情報を再編すべき」と名指しで書くこと。\n"
-                "4. **スマホUXの礼節ある進言**：段落100字超は「ユーザーへの視覚的負荷」と定義し、短文化と箇条書きへの解体を『技術的改善案』として丁寧に、かつ断定的に進言してください。\n"
-                "5. **生存確認の徹底**：日付不明のリスクに対し、「医療機関/企業としての説明責任（透明性）」の観点から具体的にえぐり、即座に修正すべき箇所を指摘してください。"
-            )
-            user_msg = f"業界: {st.session_state.industry}\nデータ:\n{m_data}\n自社テキスト抜粋: {st.session_state.my_m['text'][:4500]}\n\nレポート構成：\n### ■ 物理構造スペック比較\n### ■1. コンテンツの実務解像度分析\n#### 【実績の裏付け（証拠の密度）】\n### ■2. 成約導線とスマホUXの物理解析\n#### 【CTAとマイクロコピー】\n#### 【テキスト構造と可読性】\n### ■3. EEAT 診断（情報の権威性と信頼性）\n#### 【専門性（Expertise）】\n#### 【権威性（Authoritativeness）】\n#### 【信頼性（Trustworthiness）】\n### ■4. SEO / LLMO 診断（構造と鮮度）\n#### 【内部構造（見出し・リンク）】\n#### 【サイト構造（階層・網羅性）】\n#### 【情報の鮮度と生存確認】\n\n### ■5. 自社が勝つための具体的コンテンツ企画 5案\n### ■6. 最優先改善アクションプラン（自社用）(2x3形式でピンポイント指示)"
+    if st.button("STEP 2：調査レポートを生成"):
+        with st.spinner("統計データとテキストを統合中..."):
+            def get_stats(d):
+                return f"title:{d['title']}, h1:{d['h1']}, h2:{d['h2']}, a:{d['total_links']}, sitemap:{d['sitemap']}, 内部リンク:{d['internal_links_count']}, 資産:{d['asset_counts']}"
             
-            diag_res = client.chat.completions.create(model="gpt-4o", messages=[{"role": "system", "content": sys_msg}, {"role": "user", "content": user_msg}], temperature=0.0)
-            st.session_state.full_report = diag_res.choices[0].message.content
+            c1_info = f"【競合A】{get_stats(st.session_state.c1_data)} / テキスト抜粋: {st.session_state.c1_data['body_text']}"
+            c2_info = ""
+            if st.session_state.c2_data:
+                c2_info = f"\n【競合B】{get_stats(st.session_state.c2_data)} / テキスト抜粋: {st.session_state.c2_data['body_text']}"
+            
+            prompt_s2 = f"""
+            {st.session_state.industry}業界として調査レポートを作成せよ。
+            1. 調査項目（事業概要、主なページ名、強調分野、実績・事例・料金表・ブログの有無、問い合わせ導線の特徴）を詳細に抽出。
+            2. スペック比較表（Markdown Table）を以下の項目で作成:
+               title / h1 / h2 / a(総リンク) / sitemap.xml / 内部リンク数 / 資産構成（事例・ブログ・料金・会社情報・問い合わせ）
+            
+            【自社】{get_stats(st.session_state.my_data)} / テキスト抜粋: {st.session_state.my_data['body_text']}
+            {c1_info}{c2_info}
+            """
+            st.session_state.report_s2 = model.generate_content(prompt_s2).text
+            st.session_state.step = 3
+    
+    if 'report_s2' in st.session_state: st.markdown(st.session_state.report_s2)
 
-    if st.session_state.get("full_report"):
-        st.divider()
-        st.markdown(st.session_state.full_report)
-        copy_to_clipboard_js(st.session_state.full_report)
+# --- STEP 3：診断レポート ---
+if st.session_state.step >= 3:
+    if st.button("STEP 3：診断レポートを生成"):
+        with st.spinner("論理診断中..."):
+            prompt_s3 = f"""
+            以下のレポートに基づき診断せよ。
+            1. 構成: EEAT診断、SEO / LLMO診断、その他（CTA・可読性）
+            2. ロジック:
+               - 「事実：」「示唆：」に分けて記述。
+               - 曖昧な表現を禁止し、数値を主語にする。
+               - 構造の不備が「AI検索（LLMO）での未検出」や「スマホユーザーの迷い」にどう直結しているか記述。
+            
+            レポート原文: {st.session_state.report_s2}
+            """
+            st.session_state.report_s3 = model.generate_content(prompt_s3).text
+            st.session_state.step = 4
+            
+    if 'report_s3' in st.session_state: st.markdown(st.session_state.report_s3)
+
+# --- STEP 4：提言レポート ---
+if st.session_state.step >= 4:
+    if st.button("STEP 4：提言レポートを生成"):
+        with st.spinner("実務命令を生成中..."):
+            prompt_s4 = f"""
+            診断に基づき提言せよ。
+            1. コンテンツ企画 3案: テーマ、構成（3〜5項目）。不足しているページ種別（器作り）を優先。
+            2. アクションプラン 3項目（優先順位厳守）:
+               - 物理構造の修復（インフラ）
+               - UX・可読性の改善
+               - コンテンツ資産の補完
+            3. 具体性: [どのページ]の[どの箇所]を[どう書き換えるか]をピンポイント指示。
+            
+            診断原文: {st.session_state.report_s3}
+            """
+            st.session_state.report_s4 = model.generate_content(prompt_s4).text
+            
+    if 'report_s4' in st.session_state: st.markdown(st.session_state.report_s4)
