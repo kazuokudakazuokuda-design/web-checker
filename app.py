@@ -3,12 +3,14 @@ import requests
 from bs4 import BeautifulSoup
 import google.generativeai as genai
 from urllib.parse import urlparse, urljoin
+import time
 
 # --- 1. 基本設定 ---
 st.set_page_config(page_title="🛡️ Web構造比較診断", layout="wide")
 
 try:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+    # 2.5 Flashはコスト・速度ともに有料枠での運用に最適です
     model = genai.GenerativeModel('gemini-2.5-flash')
 except:
     st.error("エラー：StreamlitのSecretsに 'GEMINI_API_KEY' が設定されていません。")
@@ -40,7 +42,6 @@ def analyze_site_physics(url, limit_pages=50):
         asset_counts = {"事例": 0, "ブログ": 0, "料金": 0, "会社情報": 0, "問い合わせ": 0}
         for link in list(set(internal_links))[:limit_pages]:
             l_lower = link.lower()
-            # 判定キーワードを実務的に拡充
             if any(x in l_lower for x in ["case", "jirei", "works", "portfolio", "results", "archives"]): asset_counts["事例"] += 1
             if any(x in l_lower for x in ["blog", "column", "news"]): asset_counts["ブログ"] += 1
             if any(x in l_lower for x in ["price", "fee", "hiyo"]): asset_counts["料金"] += 1
@@ -83,7 +84,19 @@ if st.button("STEP 1：業界を判定"):
             st.session_state.c1_data = analyze_site_physics(comp1_url)
             st.session_state.c2_data = analyze_site_physics(comp2_url) if comp2_url else None
             
-            prompt_s1 = f"URLおよびメタディスクリプションから業界名を1語で特定せよ。\n自社Meta: {st.session_state.my_data['desc']}\n競合AMeta: {st.session_state.c1_data['desc']}"
+            # 業界判定プロンプトの厳格化（余計な解説を禁止）
+            prompt_s1 = f"""
+            以下のメタディスクリプションから、このサイトが属する「業界名」を【単語1つのみ】で回答してください。
+            解説や比較、選択肢の提示は一切不要です。
+
+            自社Meta: {st.session_state.my_data['desc']}
+            競合AMeta: {st.session_state.c1_data['desc']}
+
+            回答例：
+            Web制作
+            建設業
+            弁護士
+            """
             st.session_state.industry = model.generate_content(prompt_s1).text.strip()
             st.session_state.step = 2
 
@@ -108,29 +121,37 @@ if st.session_state.step >= 2:
             c1_info = f"【競合A】{get_stats(st.session_state.c1_data)} / 本文抜粋: {st.session_state.c1_data['body_text']}"
             c2_info = f"\n【競合B】{get_stats(st.session_state.c2_data)} / 本文抜粋: {st.session_state.c2_data['body_text']}" if st.session_state.c2_data else ""
             
+            # リクエスト統合プロンプト
             prompt_s2 = f"""
             あなたは{st.session_state.industry}業界の専門調査員です。
+            以下の指示に従い、[1]調査レポート と [2]分析コメント を出力してください。
             「です・ます」調で、比喩を排した実務的な記述を徹底してください。
 
-            1. 調査項目詳細抽出（事業概要、主なページ名、強調分野、実績・事例・料金表・ブログの有無、問い合わせ導線の特徴）
-            2. スペック比較表（Markdown Table形式）
+            [1] 調査レポート
+            - 調査項目詳細抽出（事業概要、主なページ名、強調分野、実績・事例・料金表・ブログの有無、問い合わせ導線の特徴）
+            - スペック比較表（Markdown Table形式）
+
+            [2] 分析コメント（必ず「### 分析コメント」という見出しを付けてから開始してください）
+            - スペック表の数値差について100文字以内で記述。
+            - 事例が0件の場合、「実績が未掲載であるか、あるいはURL構造等の理由で外部から認識されにくい状態である可能性」に言及し、断定を避ける。
             
             【自社】{get_stats(st.session_state.my_data)} / 本文抜粋: {st.session_state.my_data['body_text']}
             {c1_info}{c2_info}
             """
-            st.session_state.report_s2 = model.generate_content(prompt_s2).text
-            
-            prompt_comm = f"""
-            以下のスペック表に基づき、決定的な差を100文字以内でコメントしてください。
-            ※事例が0件の場合、「実績が未掲載であるか、あるいはURL構造等の理由で外部から認識されにくい状態である可能性」に言及してください。
-            \n{st.session_state.report_s2}
-            """
-            st.session_state.comm_s2 = model.generate_content(prompt_comm).text
-            st.session_state.step = 3
+            try:
+                response = model.generate_content(prompt_s2).text
+                if "### 分析コメント" in response:
+                    st.session_state.report_s2, st.session_state.comm_s2 = response.split("### 分析コメント")
+                else:
+                    st.session_state.report_s2 = response
+                    st.session_state.comm_s2 = "分析コメントの分離に失敗しました。"
+                st.session_state.step = 3
+            except Exception as e:
+                st.error(f"エラーが発生しました（制限超過の可能性があります）: {e}")
 
     if 'report_s2' in st.session_state:
         st.markdown(st.session_state.report_s2.replace("スペック比較表", "### スペック比較表\n\n**※本表はサイト内30〜50ページの巡回に基づく推測値です。**"))
-        st.info(st.session_state.comm_s2)
+        st.info(st.session_state.comm_s2.strip())
 
     # --- STEP 3：診断レポート ---
     if st.session_state.step >= 3:
@@ -159,10 +180,10 @@ if st.session_state.step >= 2:
             with st.spinner("改善プラン策定中..."):
                 prompt_s4 = f"""
                 これまでの調査・診断に基づき、改善提言を行ってください。
-                比喩（蛇口、器、等）や過激な表現（全滅、残酷、等）は一切禁止します。
+                比喩表現（蛇口、器、等）や過激な表現（全滅、残酷、等）は一切禁止します。
 
                 1. サマリー
-                   - 全体的な所感（診断を俯瞰した結果を200文字程度で要約）
+                   - 全体的な所感（診断を俯瞰した分析結果を200文字程度で要約）
                    - 提言の骨子（優先順位の根拠を、実務的な理由で明記）
 
                 2. 優先度別提言
