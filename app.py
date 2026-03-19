@@ -40,7 +40,8 @@ def analyze_site_physics(url, limit_pages=50):
         asset_counts = {"事例": 0, "ブログ": 0, "料金": 0, "会社情報": 0, "問い合わせ": 0}
         for link in list(set(internal_links))[:limit_pages]:
             l_lower = link.lower()
-            if any(x in l_lower for x in ["case", "jirei", "works"]): asset_counts["事例"] += 1
+            # 判定キーワードを実務的に拡充
+            if any(x in l_lower for x in ["case", "jirei", "works", "portfolio", "results", "archives"]): asset_counts["事例"] += 1
             if any(x in l_lower for x in ["blog", "column", "news"]): asset_counts["ブログ"] += 1
             if any(x in l_lower for x in ["price", "fee", "hiyo"]): asset_counts["料金"] += 1
             if any(x in l_lower for x in ["about", "company", "office", "access"]): asset_counts["会社情報"] += 1
@@ -61,13 +62,11 @@ def analyze_site_physics(url, limit_pages=50):
 # --- 3. メインUI ---
 st.title("🛡️ 経営戦略型・Web構造比較診断")
 
-# URL入力セクション
 col_u1, col_u2, col_u3 = st.columns(3)
 with col_u1: my_url = st.text_input("自社URL")
 with col_u2: comp1_url = st.text_input("競合A")
 with col_u3: comp2_url = st.text_input("競合B")
 
-# ステップと注意喚起
 st.write("---")
 st.write("**【概要】** 本ツールは、自社と競合のWebサイトを「物理構造」と「コンテンツ内容」の両面から比較し、4つのステップで実務的な改善案を抽出します。")
 st.write("本診断は生成AIによる診断です。推測、不正確な情報を含む可能性がありますので、一次診断用として参考に使用ください。")
@@ -77,9 +76,9 @@ if 'step' not in st.session_state: st.session_state.step = 1
 # --- STEP 1：業界判定 ---
 if st.button("STEP 1：業界を判定"):
     if not my_url or not comp1_url:
-        st.warning("診断を開始するには、自社URLと競合AのURLを入力してください。")
+        st.warning("自社URLと競合AのURLを入力してください。")
     else:
-        with st.spinner("メタデータを解析中..."):
+        with st.spinner("メタデータ解析中..."):
             st.session_state.my_data = analyze_site_physics(my_url)
             st.session_state.c1_data = analyze_site_physics(comp1_url)
             st.session_state.c2_data = analyze_site_physics(comp2_url) if comp2_url else None
@@ -88,14 +87,11 @@ if st.button("STEP 1：業界を判定"):
             st.session_state.industry = model.generate_content(prompt_s1).text.strip()
             st.session_state.step = 2
 
-# STEP 1 判定結果の表示（修正可能・オープン状態）
 if st.session_state.step >= 2:
     st.write("---")
     st.subheader("STEP 1：業界の特定")
-    
     st.write("AI判定の業界名です。より正確な診断のため、必要に応じて修正してください。")
     st.session_state.industry = st.text_input("業界名", st.session_state.industry)
-    st.caption("※ 業界は読み違えたり、大きくまたは小さくとらえることがあるので、適宜修正をたのみます。")
 
     st.write("### トップページのメタデータ")
     st.write(f"・自社Meta: {st.session_state.my_data['desc']}")
@@ -105,7 +101,7 @@ if st.session_state.step >= 2:
 
     # --- STEP 2：調査レポート ---
     if st.button("STEP 2：調査レポートを生成"):
-        with st.spinner("比較レポートを生成中..."):
+        with st.spinner("比較レポート生成中..."):
             def get_stats(d):
                 return f"title:{d['title']}, h1:{d['h1']}, h2:{d['h2']}, a:{d['total_links']}, sitemap:{d['sitemap']}, 内部リンク:{d['internal_links_count']}, 資産:{d['asset_counts']}"
             
@@ -113,45 +109,43 @@ if st.session_state.step >= 2:
             c2_info = f"\n【競合B】{get_stats(st.session_state.c2_data)} / 本文抜粋: {st.session_state.c2_data['body_text']}" if st.session_state.c2_data else ""
             
             prompt_s2 = f"""
-            あなたは{st.session_state.industry}業界の専門調査員です。以下の構成でレポートを作成してください。
-            語尾は「です・ます」調で、礼節を保ったプロフェッショナルなトーンを徹底してください。
+            あなたは{st.session_state.industry}業界の専門調査員です。
+            「です・ます」調で、比喩を排した実務的な記述を徹底してください。
 
             1. 調査項目詳細抽出（事業概要、主なページ名、強調分野、実績・事例・料金表・ブログの有無、問い合わせ導線の特徴）
-            2. スペック比較表（Markdown Table）
-               項目: title / h1 / h2 / a(総リンク) / sitemap.xml / 内部リンク数 / 資産構成（事例/ブログ/料金/会社情報/問い合わせ）
+            2. スペック比較表（Markdown Table形式）
             
-            【自社データ】{get_stats(st.session_state.my_data)} / 本文抜粋: {st.session_state.my_data['body_text']}
+            【自社】{get_stats(st.session_state.my_data)} / 本文抜粋: {st.session_state.my_data['body_text']}
             {c1_info}{c2_info}
             """
             st.session_state.report_s2 = model.generate_content(prompt_s2).text
             
-            # 数値に基づく100文字コメントを生成
-            prompt_comm = f"以下のスペック表の数値を見て、自社と競合の決定的な差や改善のヒントを、数値に基づいて100文字以内で礼儀正しくコメントしてください。\n{st.session_state.report_s2}"
+            prompt_comm = f"""
+            以下のスペック表に基づき、決定的な差を100文字以内でコメントしてください。
+            ※事例が0件の場合、「実績が未掲載であるか、あるいはURL構造等の理由で外部から認識されにくい状態である可能性」に言及してください。
+            \n{st.session_state.report_s2}
+            """
             st.session_state.comm_s2 = model.generate_content(prompt_comm).text
             st.session_state.step = 3
 
     if 'report_s2' in st.session_state:
-        # スペック表への注釈挿入
-        updated_report = st.session_state.report_s2.replace("スペック比較表", "### スペック比較表\n\n**※本表はサイト内30〜50ページの巡回に基づく推測値です。**")
-        st.markdown(updated_report)
+        st.markdown(st.session_state.report_s2.replace("スペック比較表", "### スペック比較表\n\n**※本表はサイト内30〜50ページの巡回に基づく推測値です。**"))
         st.info(st.session_state.comm_s2)
 
     # --- STEP 3：診断レポート ---
     if st.session_state.step >= 3:
         if st.button("STEP 3：診断レポートを生成"):
-            with st.spinner("論理診断を実行中..."):
+            with st.spinner("論理診断中..."):
                 prompt_s3 = f"""
-                以下のレポートに基づき診断を行ってください。
-                礼節を保ち、建設的なトーンで、「です・ます」調を徹底してください。
+                レポートに基づき、客観的な診断事実に集中して記述してください。
+                比喩表現、全体的な所感、改善案はここでは述べないでください。
 
                 1. 構成: EEAT診断、SEO / LLMO診断、その他（CTA・可読性）
                 2. 記述ロジック:
-                   - 「事実：」「示唆：」に分けて記述してください。
-                   - 曖昧な表現を避け、数値を主語にしてください。
-                   - 構造の不備が「AI検索（LLMO）での未検出」や「スマホユーザーの迷い」にどう直結しているか論理的に記述してください。
+                   - 「事実：」「示唆：」に分けて記述。
+                   - 数値を主語にし、具体的構造がAI検索やユーザー行動にどう影響するか論理的に記述。
                 
-                レポート原文:
-                {st.session_state.report_s2}
+                原文: {st.session_state.report_s2}
                 """
                 st.session_state.report_s3 = model.generate_content(prompt_s3).text
                 st.session_state.step = 4
@@ -162,26 +156,25 @@ if st.session_state.step >= 2:
     # --- STEP 4：提言レポート ---
     if st.session_state.step >= 4:
         if st.button("STEP 4：提言レポートを生成"):
-            with st.spinner("改善アクションプランを策定中..."):
+            with st.spinner("改善プラン策定中..."):
                 prompt_s4 = f"""
-                診断に基づき、改善提言を行ってください。
-                過激な表現を避け、礼節ある専門家として「です・ます」調で記述してください。
+                これまでの調査・診断に基づき、改善提言を行ってください。
+                比喩（蛇口、器、等）や過激な表現（全滅、残酷、等）は一切禁止します。
 
                 1. サマリー
-                   - 分析結果の要約（200文字程度）
-                   - 提言の骨子（なぜその優先順位なのか、根拠を添えて数行で明記）
+                   - 全体的な所感（診断を俯瞰した結果を200文字程度で要約）
+                   - 提言の骨子（優先順位の根拠を、実務的な理由で明記）
 
                 2. 優先度別提言
                    - 「最優先」: 直ちに改善が必要な事項。
-                   - 「優先」: 競合に追いつき、信頼を構築するための施策。
-                   - 「次の課題」: 中長期的な差別化へのステップ。
-                   （※見出しに余計な装飾をつけず、診断に基づいた具体的な内容を記述してください）
+                   - 「優先」: 中長期的な対策。
+                   - 「次の課題」: さらなる発展。
+                   ※事例が少ない場合、存在だけでなく「見つけやすさ（構造）」の観点からも提言してください。
 
                 3. 新コンテンツ案
-                   - 不足している「ページ種別（器作り）」を優先した3案（テーマ、構成）。
+                   - 不足しているページ種別の追加・改修案を3案。実務的な役割を明記。
 
-                診断内容:
-                {st.session_state.report_s3}
+                診断データ: {st.session_state.report_s3}
                 """
                 st.session_state.report_s4 = model.generate_content(prompt_s4).text
                 
