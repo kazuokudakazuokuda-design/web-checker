@@ -48,9 +48,14 @@ th { background-color: #f1f5f9 !important; font-weight: 700 !important; }
 st.title("🛡️ Web構造比較診断")
 st.markdown("""
 <div class="disclaimer">
-本診断は生成AIによる一次診断です。推測・不正確な情報を含む場合があります。営業提案の下準備としてご活用ください。
+本診断は生成AIによる一次診断です。推測・不正確な情報を含む場合があります。
 </div>
 """, unsafe_allow_html=True)
+
+st.markdown("""
+自社と競合サイトのURLを入力するだけで、サイト構造・コンテンツ・SEO・EEAT・問い合わせ導線の6軸を自動診断します。  
+比較表・軸別スコア・優先度付きの改善提案・推奨コンテンツ案をまとめて出力するので、営業提案の下準備にそのまま使えます。
+""")
 
 # =============================================
 # Gemini 初期化
@@ -368,9 +373,9 @@ with col3:
     c2_url = st.text_input("競合B URL（任意）", placeholder="https://comp-b.com")
 
 industry = st.text_input(
-    "業種（自由入力）",
-    placeholder="例：Web制作会社 / 弁護士事務所 / 建設業 / SaaS",
-    help="業種を入力すると、その業界の基準に合わせた診断を行います。"
+    "業種（必須）",
+    placeholder="例：電子部品製造業 / 皮膚科クリニック / 注文住宅工務店 / BtoB SaaS",
+    help="できるだけ具体的に入力すると診断の精度が上がります。「製造業」より「電子部品製造業」、「医師」より「皮膚科クリニック」のように業種・業態を絞って入力してください。"
 )
 
 run_btn = st.button("診断を実行する", disabled=not (my_url and c1_url and industry))
