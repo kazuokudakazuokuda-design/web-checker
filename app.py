@@ -1,223 +1,428 @@
 import streamlit as st
 import requests
 from bs4 import BeautifulSoup
+from urllib.parse import urlparse, urljoin, unquote
 import google.generativeai as genai
-from urllib.parse import urlparse, urljoin
 import time
+import re
 
-# --- 1. 基本設定・看板表示 ---
-st.set_page_config(page_title="🛡️ Web構造比較診断", layout="wide")
+# =============================================
 
-# CSS: 見出しサイズと余白の徹底調整
-st.markdown("""
-    <style>
-    h2 { 
-        font-size: 2.2em !important; 
-        font-weight: 800 !important; 
-        color: #1E1E1E !important;
-        border-left: 15px solid #1f77b4;
-        padding-left: 20px;
-        margin-top: 1.5em !important;
-        margin-bottom: 1.0em !important;
-        line-height: 1.2 !important;
-    }
-    h3 { 
-        font-size: 1.5em !important; 
-        font-weight: bold !important; 
-        margin-top: 1.2em !important; 
-        color: #2c3e50;
-    }
-    table { 
-        width: 100% !important; 
-        table-layout: fixed !important; 
-        border-collapse: collapse !important;
-    }
-    td, th { 
-        word-wrap: break-word !important; 
-        white-space: normal !important; 
-        font-size: 1.1em !important; 
-        padding: 12px !important;
-        border: 1px solid #ddd !important;
-    }
-    th { background-color: #f8f9fa !important; }
-    </style>
+# 基本設定
+
+# =============================================
+
+st.set_page_config(page_title=“Web構造比較診断”, layout=“wide”)
+
+st.markdown(”””
+
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap');
+
+html, body, [class*="css"] {
+    font-family: 'Noto Sans JP', sans-serif;
+}
+h1 { font-size: 1.8em !important; font-weight: 700 !important; }
+h2 { font-size: 1.4em !important; font-weight: 700 !important; margin-top: 1.5em !important; border-left: 4px solid #2563eb; padding-left: 12px; }
+h3 { font-size: 1.15em !important; font-weight: 700 !important; margin-top: 1.2em !important; }
+table { width: 100% !important; border-collapse: collapse !important; }
+td, th { padding: 10px 14px !important; border: 1px solid #e2e8f0 !important; font-size: 0.95em !important; word-break: break-word; }
+th { background-color: #f1f5f9 !important; font-weight: 700 !important; }
+.stButton > button {
+    background-color: #2563eb;
+    color: white;
+    font-weight: 700;
+    border-radius: 6px;
+    padding: 0.5em 2em;
+    border: none;
+}
+.stButton > button:hover { background-color: #1d4ed8; }
+.disclaimer {
+    background: #fef9c3;
+    border-left: 4px solid #eab308;
+    padding: 10px 16px;
+    border-radius: 4px;
+    font-size: 0.88em;
+    color: #713f12;
+    margin-bottom: 1.5em;
+}
+</style>
+
+“””, unsafe_allow_html=True)
+
+st.title(“🛡️ Web構造比較診断”)
+st.markdown(”””
+
+<div class="disclaimer">
+本診断は生成AIによる一次診断です。推測・不正確な情報を含む場合があります。営業提案の下準備としてご活用ください。
+</div>
 """, unsafe_allow_html=True)
 
-# 看板部分：指示通りの改行と文言
-st.markdown("""
-# 🛡️ Web構造比較診断
+# =============================================
 
-**【概要】** 本ツールは、自社と競合のWebサイトを「物理構造」と「コンテンツ内容」の両面から比較し、4つのステップで実務的な改善案を抽出します。
+# Gemini 初期化
 
-本診断は生成AIによる診断です。推測、不正確な情報を含む可能性がありますので、一次診断用として参考に使用ください。
-""")
-
-if 'step' not in st.session_state:
-    st.session_state.step = 1
+# =============================================
 
 try:
-    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-    model = genai.GenerativeModel('models/gemini-2.5-flash')
+genai.configure(api_key=st.secrets[“GEMINI_API_KEY”])
+model = genai.GenerativeModel(“models/gemini-2.5-flash”)
 except Exception as e:
-    st.error(f"初期設定エラー: {e}")
-    st.stop()
+st.error(f”APIキー設定エラー: {e}”)
+st.stop()
 
-# --- 2. 解析関数 ---
-def analyze_site_physics(url, limit_pages=40):
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36"}
-    url = url.strip()
-    if not url.startswith("http"): url = "https://" + url
-    try:
-        r = requests.get(url, headers=headers, timeout=15)
-        r.raise_for_status()
-        r.encoding = r.apparent_encoding
-        soup = BeautifulSoup(r.text, "html.parser")
-    except Exception as e:
-        return {"error": True, "message": str(e)}
+# =============================================
 
-    m_desc = soup.find("meta", attrs={"name": "description"})
-    h1_count = len(soup.find_all('h1'))
-    h2_count = len(soup.find_all('h2'))
-    all_links = soup.find_all('a', href=True)
-    domain = urlparse(url).netloc
-    internal_links = [urljoin(url, l['href']) for l in all_links if domain in urljoin(url, l['href'])]
-    
-    asset_counts = {"事例": 0, "ブログ": 0}
-    for link in list(set(internal_links))[:limit_pages]:
-        l_lower = link.lower()
-        if any(x in l_lower for x in ["case", "jirei", "works", "results"]): asset_counts["事例"] += 1
-        if any(x in l_lower for x in ["blog", "column", "news"]): asset_counts["ブログ"] += 1
+# 定数
 
-    return {
-        "title": (soup.title.string[:25] + "...") if soup.title and len(soup.title.string) > 25 else (soup.title.string if soup.title else "No Title"),
-        "desc": m_desc["content"] if m_desc else "未設定",
-        "h1": h1_count, "h2": h2_count, "total_links": len(all_links),
-        "internal_links_count": len(internal_links),
-        "asset_counts": asset_counts,
-        "body_preview": soup.get_text()[:1500] 
+# =============================================
+
+HEADERS = {
+“User-Agent”: (
+“Mozilla/5.0 (Windows NT 10.0; Win64; x64) “
+“AppleWebKit/537.36 (KHTML, like Gecko) “
+“Chrome/120.0.0.0 Safari/537.36”
+)
+}
+
+PAGE_TYPE_KEYWORDS = {
+“service”:  [“service”, “services”, “solution”, “product”, “jigyou”, “jigyo”],
+“case”:     [“case”, “cases”, “jirei”, “works”, “result”, “portfolio”, “jisseki”],
+“blog”:     [“blog”, “column”, “news”, “article”, “media”, “insight”],
+“recruit”:  [“recruit”, “career”, “job”, “saiyou”, “saiyo”],
+“about”:    [“about”, “company”, “gaisha”, “kaisha”, “profile”, “vision”, “mission”],
+}
+
+EVAL_AXES = [
+(“structure”,  “サイト構造の明快さ”),
+(“content”,    “コンテンツの網羅性”),
+(“case_study”, “事例・実績の充実度”),
+(“eeat”,       “EEAT（経験・専門性・権威性・信頼性）”),
+(“seo_llmo”,   “SEO／LLMO対応”),
+(“cta”,        “問い合わせ導線の設計”),
+]
+
+# =============================================
+
+# クロールレイヤー
+
+# =============================================
+
+def normalize_url(url: str) -> str:
+url = url.strip()
+if not url.startswith(“http”):
+url = “https://” + url
+return url
+
+def fetch_page(url: str, timeout: int = 12):
+“”“1ページ取得。失敗時はNoneを返す。”””
+try:
+r = requests.get(url, headers=HEADERS, timeout=timeout)
+r.raise_for_status()
+r.encoding = r.apparent_encoding
+return BeautifulSoup(r.text, “html.parser”)
+except Exception:
+return None
+
+def extract_main_text(soup: BeautifulSoup, max_chars: int = 2000) -> str:
+“”“ナビ・フッター・スクリプトを除いたメインテキストを抽出。”””
+for tag in soup([“nav”, “footer”, “header”, “script”, “style”, “noscript”]):
+tag.decompose()
+main = soup.find(“main”) or soup.find(“article”) or soup.find(“body”)
+if not main:
+return “”
+text = re.sub(r’\s+’, ’ ’, main.get_text(separator=” “)).strip()
+return text[:max_chars]
+
+def classify_page_type(url: str) -> str:
+“”“URLパスからページ種別を推定。日本語URLにも対応。”””
+path = unquote(urlparse(url).path.lower())
+for ptype, keywords in PAGE_TYPE_KEYWORDS.items():
+if any(kw in path for kw in keywords):
+return ptype
+return “other”
+
+def crawl_site(top_url: str, max_pages: int = 7):
+“””
+トップページ＋種別ごとに代表1ページを取得（合計最大max_pages）。
+戻り値: {“top”: {…}, “service”: {…}, “case”: {…}, …}
+“””
+top_url = normalize_url(top_url)
+result = {}
+
+```
+# トップページ取得
+soup = fetch_page(top_url)
+if soup is None:
+    return {"error": True, "message": f"{top_url} を取得できませんでした。"}
+
+result["top"] = {
+    "url": top_url,
+    "title": soup.title.string.strip() if soup.title else "No Title",
+    "meta_desc": (soup.find("meta", attrs={"name": "description"}) or {}).get("content", "未設定"),
+    "h1": len(soup.find_all("h1")),
+    "h2": len(soup.find_all("h2")),
+    "text": extract_main_text(soup),
+}
+
+# 内部リンク収集
+domain = urlparse(top_url).netloc
+all_links = soup.find_all("a", href=True)
+internal_urls = list({
+    urljoin(top_url, a["href"])
+    for a in all_links
+    if domain in urljoin(top_url, a["href"])
+    and not urljoin(top_url, a["href"]).endswith((".pdf", ".jpg", ".png", ".zip"))
+})
+
+result["top"]["internal_link_count"] = len(internal_urls)
+
+# ページ種別ごとに代表1ページを取得
+found_types = set()
+pages_fetched = 1
+
+for url in internal_urls:
+    if pages_fetched >= max_pages:
+        break
+    ptype = classify_page_type(url)
+    if ptype == "other" or ptype in found_types:
+        continue
+
+    page_soup = fetch_page(url)
+    if page_soup is None:
+        continue
+
+    result[ptype] = {
+        "url": url,
+        "h1": len(page_soup.find_all("h1")),
+        "h2": len(page_soup.find_all("h2")),
+        "text": extract_main_text(page_soup),
     }
+    found_types.add(ptype)
+    pages_fetched += 1
+    time.sleep(0.5)  # 過負荷防止
 
-# --- 3. UI部 ---
-col_u1, col_u2, col_u3 = st.columns(3)
-with col_u1: my_url = st.text_input("自社URL", key="my_url_in", placeholder="https://example.com")
-with col_u2: comp1_url = st.text_input("競合A", key="c1_url_in", placeholder="https://comp-a.com")
-with col_u3: comp2_url = st.text_input("競合B (任意)", key="c2_url_in", placeholder="https://comp-b.com")
+# ページ種別ごとのカウント（リンクベース）
+type_counts = {k: 0 for k in PAGE_TYPE_KEYWORDS}
+for url in internal_urls:
+    pt = classify_page_type(url)
+    if pt in type_counts:
+        type_counts[pt] += 1
+result["type_counts"] = type_counts
 
-if st.button("STEP 1：業界を判定"):
-    if not my_url or not comp1_url:
-        st.warning("自社と競合AのURLを入力してください。")
-    else:
-        with st.spinner("スキャン中..."):
-            st.session_state.my_data = analyze_site_physics(my_url)
-            st.session_state.c1_data = analyze_site_physics(comp1_url)
-            st.session_state.c2_data = analyze_site_physics(comp2_url) if comp2_url else None
-            
-            error_found = False
-            for data, url in [(st.session_state.my_data, my_url), (st.session_state.c1_data, comp1_url), (st.session_state.c2_data, comp2_url)]:
-                if data and "error" in data:
-                    st.error(f"URL：{url} は現在読み込めません。サイト側のセキュリティ対策（WAF等）により、自動解析がブロックされている可能性があります。URLが正しいか確認するか、別の競合サイトでお試しください。")
-                    error_found = True
-            
-            if not error_found:
-                p1 = f"業界名を単語1つで回答せよ。タイトル:{st.session_state.my_data['title']} 内容:{st.session_state.my_data['desc']}"
-                st.session_state.industry = model.generate_content(p1).text.strip()
-                st.session_state.step = 2
+return result
+```
 
-if st.session_state.step >= 2:
-    st.divider()
-    st.session_state.industry = st.text_input("業界名", st.session_state.industry)
-    
-    st.write("**トップページのメタディスクリプション**")
-    st.write(f"・自社：{st.session_state.my_data['desc']}")
-    st.write(f"・競合A：{st.session_state.c1_data['desc']}")
-    if st.session_state.c2_data:
-        st.write(f"・競合B：{st.session_state.c2_data['desc']}")
-    
-    if st.button("診断レポートを一括生成"):
-        with st.spinner("詳細レポートを構築中..."):
-            def format_data(d):
-                if not d or "error" in d: return "データなし"
-                return f"タイトル:{d['title']}, h1:{d['h1']}, h2:{d['h2']}, 内部リンク:{d['internal_links_count']}, 事例:{d['asset_counts']['事例']}, ブログ:{d['asset_counts']['ブログ']}, プレビュー:{d['body_preview']}"
-            
-            c2_info = format_data(st.session_state.c2_data) if st.session_state.c2_data else "なし"
-            
-            prompt_main = f"""
-            解析結果からレポートを作成せよ。挨拶や前置きは一切不要。
-            
-            重要ルール：
-            ・メタディスクリプションの要約・改変禁止：取得したデータは原文のまま表示・分析に使用し、一字一句変えずに扱うこと。
-            ・各見出し（##や###）、各項目（■項目名）、および各段落の間には必ず【空行（1行分の空白）】を挿入せよ。文字を絶対に詰めないこと。
+# =============================================
 
-            ## 【STEP 2：調査レポート】
+# 評価レイヤー
 
-            Markdownで比較表を作成（会社名を行、項目を列に）。
-            項目：サイトタイトル, H1数, H2数, 内部リンク, 事例数, ブログ数, 最終更新日
-            ※最終更新日はプレビューから推測せよ。不明なら不明で良い。
+# =============================================
 
-            ※表の直後には必ず【空行】を入れ、「※数値はサイト内30〜50ページを巡回した推測値です」と必ず記載せよ。
+def build_site_summary(label: str, data: dict) -> str:
+“”“サイトデータを文字列サマリーに変換してプロンプトに渡す。”””
+lines = [f”【{label}】”]
+top = data.get(“top”, {})
+lines.append(f”タイトル: {top.get(‘title’, ‘’)}”)
+lines.append(f”メタディスクリプション: {top.get(‘meta_desc’, ‘’)}”)
+lines.append(f”H1数: {top.get(‘h1’, 0)} / H2数: {top.get(‘h2’, 0)}”)
+lines.append(f”内部リンク数: {top.get(‘internal_link_count’, 0)}”)
+tc = data.get(“type_counts”, {})
+lines.append(
+f”ページ種別リンク数 - “
+f”サービス:{tc.get(‘service’, 0)} “
+f”事例:{tc.get(‘case’, 0)} “
+f”ブログ:{tc.get(‘blog’, 0)} “
+f”採用:{tc.get(‘recruit’, 0)} “
+f”会社概要:{tc.get(‘about’, 0)}”
+)
+lines.append(f”トップページ本文抜粋: {top.get(‘text’, ‘’)[:800]}”)
+for ptype in [“service”, “case”, “blog”, “about”]:
+if ptype in data:
+lines.append(f”{ptype}ページ本文抜粋: {data[ptype].get(‘text’, ‘’)[:500]}”)
+return “\n”.join(lines)
 
-            ## 【STEP 3：診断レポート】
+def run_diagnosis(industry: str, my_data: dict, c1_data: dict, c2_data) -> str:
+“”“Geminiに診断を依頼し、レポートテキストを返す。”””
+my_summary = build_site_summary(“自社”, my_data)
+c1_summary = build_site_summary(“競合A”, c1_data)
+c2_summary = build_site_summary(“競合B”, c2_data) if c2_data else “競合B: データなし”
+axes_str = “\n”.join([f”- {key}: {label}” for key, label in EVAL_AXES])
 
-            以下の大項目（##）の中に、必ず指定の小見出し（### ■項目名）をすべて立てて記述せよ。
-            各小見出しの直後、および各ブロック（第1段〜第3段）の間には必ず【空行】を挟め。
-            
-            ※「日付が未来である」等の不確かな指摘はAI側の誤検知リスクがあるため、一切禁止する。
-            
-            1. EEAT診断
-               ### ■経験・専門性
-               ### ■権威性
-               ### ■信頼性
-            2. SEO / LLMO診断
-               ### ■構造の明快さ
-               ### ■情報の網羅性とリンク構造
-               ### ■キーワードの接点と継続性
-            3. その他
-               ### ■可読性とコンテンツ量
-            
-            各項目の記述ルール：
-            ・第1段：事実と解釈。数値を自然に組み込み、0や低数値は「AIや検索エンジンが見つけにくい状態」と明記。
-            ・第2段：(リスク・要チェック) 
-            ・第3段：影響。ユーザーがどう迷い問い合わせず離脱するか。
+```
+prompt = f"""
+```
 
-            ## 【STEP 4：提言レポート】
+あなたはWebサイト診断の専門家です。以下のデータをもとに、営業提案の下準備として使える診断レポートを作成してください。
+挨拶・前置き・後書きは一切不要です。レポート本文のみ出力してください。
 
-            導入文：「これまでの調査・診断に基づき、以下の改善提言を行います。」のみ。
-            
-            1. サマリー
-               - 1. 診断結果のまとめ（阻害要因を動的に整理）
-               - 2. 提案の骨子（問い合わせ最大化方針を文章で記述）
-               ※各箇条書きの間には【空行】を入れよ。
-            
-            2. 優先度別提言（最優先/優先/次の課題）
-               ※スペック表の数値差を比較し、AIが動的に選別して優先順位をつけよ。
-               【記述ルール】：見出し（【最優先】等）の直後、説明文の直後、（最初の一歩）の直前には、必ず【空行】を挿入せよ。
-            
-            3. 新コンテンツ３案
-               「タイトル」「方向性」「構成」「各ポイント」のセットで提示せよ。
-               ※タイトル、方向性、構成、各ポイントの間には必ず【空行】を入れよ。
+【業種】{industry}
 
-               【生成ロジック】:
-               「○○」という空欄を一切排除し、以下の2パターンで出し分けよ。
-               1. 判別できる場合（自社・競合のデータに明確な強みがある時）
-                  - タイトル: 抽出されたデータに基づく具体的な名称。
-                  - 方向性: その記事を書く目的やターゲット。
-                  - 構成: そのテーマの内容を3〜5項目の箇条書きで簡潔にまとめる。
-                  - 各ポイント: 制作時に外せない重要な視点やアドバイス。
-               2. 判別できない場合（データが不足している時）
-                  - 一文目: **「注力したいと考えている特定の分野について、以下のような切り口でコンテンツを作ることを推奨します」**と記載せよ。
-                  - タイトル: 「【注力分野名】を〜」など、分野を当てはめて使える名称。
-                  - 方向性: その業界のプロが情報発信すべき理由。
-                  - 構成: 業界の筋道（例：弁護士なら「解決までの流れ・費用・証拠」など）に基づき、3〜5項目の箇条書きで簡潔にまとめる。
-                  - 各ポイント: その業界の顧客が必ずチェックする「業界固有の重要ポイント」を軸にしたアドバイスを提示せよ。
-                    例（弁護士業界の場合）: 解決までのロードマップ、費用発生のタイミング、証拠の集め方などを網羅した設計図を提示。
-                    例（他業界の場合）: その業界特有の「安心材料」や「選定基準」をAIが業界知識から導き出し、詳細に書き上げよ。
+{my_summary}
 
-            自社データ: {format_data(st.session_state.my_data)}
-            競合Aデータ: {format_data(st.session_state.c1_data)}
-            競合Bデータ: {c2_info}
-            """
-            st.session_state.full_report = model.generate_content(prompt_main).text
-            st.session_state.step = 3
+{c1_summary}
 
-    if 'full_report' in st.session_state:
-        st.markdown(st.session_state.full_report)
+{c2_summary}
+
+-----
+
+## 出力形式（必ずこの順序・構成で出力すること）
+
+### 営業トーク用サマリー
+
+自社サイトを営業担当者が顧客に説明する際に使える導入文を2〜3文で書いてください。
+「御社のサイトを拝見したところ、〜」という書き出しで始め、強みと課題を簡潔に含めてください。
+
+-----
+
+### 比較表
+
+Markdown表で出力してください。
+行：自社 / 競合A / 競合B（データなしの場合は「-」）
+列：H1数 / H2数 / 内部リンク数 / サービスページ数 / 事例ページ数 / ブログページ数
+
+表の直後に必ず「※数値はリンク構造から推計した概算値です」と記載してください。
+
+-----
+
+### 軸別診断
+
+以下の6軸それぞれについて診断してください。
+{axes_str}
+
+各軸の記述形式：
+
+#### [軸名]（自社スコア: X/10）
+
+**事実と解釈**
+数値を根拠にした現状説明。{industry}業界の標準と比較して評価してください。
+
+**リスク・要チェック**
+放置した場合の具体的なリスク。
+
+**改善インパクト**
+改善した場合にユーザー行動・問い合わせ数にどう影響するか。
+
+-----
+
+### 提言（優先度順）
+
+#### 最優先
+
+タイトル・施策内容・期待効果をセットで記述。
+
+#### 優先
+
+タイトル・施策内容・期待効果をセットで記述。
+
+#### 次の課題
+
+タイトル・施策内容・期待効果をセットで記述。
+
+-----
+
+### 推奨コンテンツ3案
+
+{industry}業界のユーザーが問い合わせ前に調べる情報を起点に、以下の形式で3案提示してください。
+
+**案1**
+
+- タイトル：
+- ターゲット：
+- 構成（3〜5項目）：
+- 制作上のポイント：
+
+**案2**（同形式）
+
+**案3**（同形式）
+
+-----
+
+重要ルール：
+
+- メタディスクリプションは原文のまま使用し、要約・改変禁止
+- 「○○業界では〜」など業種に即した具体的な表現を使う
+- スコアは根拠のある採点をすること。全項目を高くしない
+- 不確かな日付・未来日付の指摘は禁止
+  “””
+  
+  response = model.generate_content(prompt)
+  return response.text
+
+# =============================================
+
+# UI
+
+# =============================================
+
+st.subheader(“診断対象URL・業種を入力”)
+
+col1, col2, col3 = st.columns(3)
+with col1:
+my_url = st.text_input(“自社URL”, placeholder=“https://example.com”)
+with col2:
+c1_url = st.text_input(“競合A URL”, placeholder=“https://comp-a.com”)
+with col3:
+c2_url = st.text_input(“競合B URL（任意）”, placeholder=“https://comp-b.com”)
+
+industry = st.text_input(
+“業種（自由入力）”,
+placeholder=“例：Web制作会社 / 弁護士事務所 / 建設業 / SaaS”,
+help=“業種を入力すると、その業界の基準に合わせた診断を行います。”
+)
+
+run_btn = st.button(“診断を実行する”, disabled=not (my_url and c1_url and industry))
+
+if run_btn:
+# ステートリセット
+for key in [“my_data”, “c1_data”, “c2_data”, “report”]:
+st.session_state.pop(key, None)
+
+```
+with st.spinner("サイトをクロール中..."):
+    my_data = crawl_site(my_url)
+    c1_data = crawl_site(c1_url)
+    c2_data = crawl_site(c2_url) if c2_url.strip() else None
+
+# エラーチェック
+errors = []
+for data, label in [(my_data, "自社"), (c1_data, "競合A"), (c2_data, "競合B")]:
+    if data and "error" in data:
+        errors.append(f"**{label}**：{data['message']}")
+
+if errors:
+    for e in errors:
+        st.error(e)
+    st.info("WAF等によりブロックされている可能性があります。URLを確認するか、別のサイトでお試しください。")
+else:
+    st.session_state.my_data = my_data
+    st.session_state.c1_data = c1_data
+    st.session_state.c2_data = c2_data
+
+    with st.spinner("AIが診断レポートを生成中...（30〜60秒かかる場合があります）"):
+        report = run_diagnosis(industry, my_data, c1_data, c2_data)
+        st.session_state.report = report
+```
+
+# レポート表示
+
+if “report” in st.session_state:
+st.divider()
+st.markdown(st.session_state.report)
+
+```
+st.divider()
+col_copy, col_reset = st.columns([3, 1])
+with col_copy:
+    st.text_area(
+        "レポートをコピーする",
+        value=st.session_state.report,
+        height=200,
+        help="このテキストエリアから全文コピーできます"
+    )
+with col_reset:
+    if st.button("🔄 新しい診断を始める"):
+        for key in ["my_data", "c1_data", "c2_data", "report"]:
+            st.session_state.pop(key, None)
+        st.rerun()
+```
